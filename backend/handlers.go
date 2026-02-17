@@ -176,14 +176,19 @@ func handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	blockers := jsonStringify(body["blockers"])
 	wins := jsonStringify(body["wins"])
 
+	transcript := nullString(body["transcript"])
+	now := time.Now().UTC().Format(time.RFC3339)
+
 	DB.Exec(`
 		INSERT INTO entries (id, member_id, date, summary, morale_score, growth_score,
 			morale_rationale, growth_rationale,
-			tags, action_items_mine, action_items_theirs, notable_quotes, blockers, wins, private_note)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			tags, action_items_mine, action_items_theirs, notable_quotes, blockers, wins,
+			private_note, transcript, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, memberID, date, summary, moraleScore, growthScore,
 		moraleRationale, growthRationale,
-		tags, actionMine, actionTheirs, quotes, blockers, wins, privateNote,
+		tags, actionMine, actionTheirs, quotes, blockers, wins,
+		privateNote, transcript, now, now,
 	)
 
 	row := DB.QueryRow(fmt.Sprintf("SELECT %s FROM entries WHERE id = ?", entryCols), id)
@@ -215,7 +220,7 @@ func handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	allowedFields := []string{
 		"summary", "morale_score", "growth_score", "morale_rationale", "growth_rationale",
 		"tags", "action_items_mine", "action_items_theirs", "notable_quotes",
-		"blockers", "wins", "private_note",
+		"blockers", "wins", "private_note", "transcript",
 	}
 	jsonFields := map[string]bool{
 		"tags": true, "action_items_mine": true, "action_items_theirs": true,
@@ -242,6 +247,10 @@ func handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, existing)
 		return
 	}
+
+	// Always update updated_at when there are changes
+	setClauses = append(setClauses, "updated_at = ?")
+	values = append(values, time.Now().UTC().Format(time.RFC3339))
 
 	values = append(values, id)
 	DB.Exec(fmt.Sprintf("UPDATE entries SET %s WHERE id = ?", strings.Join(setClauses, ", ")), values...)
