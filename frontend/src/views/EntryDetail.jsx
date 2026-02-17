@@ -22,9 +22,13 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
 
   const saveEdit = () => {
     const cleaned = { ...editData };
-    const listFields = ["wins", "blockers", "notable_quotes", "action_items_mine", "action_items_theirs"];
-    for (const f of listFields) {
+    const stringListFields = ["wins", "blockers", "notable_quotes"];
+    for (const f of stringListFields) {
       if (cleaned[f]) cleaned[f] = cleaned[f].filter(s => s.trim() !== "");
+    }
+    const actionFields = ["action_items_mine", "action_items_theirs"];
+    for (const f of actionFields) {
+      if (cleaned[f]) cleaned[f] = cleaned[f].filter(a => a.text.trim() !== "");
     }
     onUpdate(entry.id, cleaned);
     setEditingSection(null);
@@ -52,6 +56,12 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
       cursor: "pointer",
     }}>Save</button>
   );
+
+  const toggleActionItem = (field, index) => {
+    const items = [...entry[field]];
+    items[index] = { ...items[index], completed: !items[index].completed };
+    onUpdate(entry.id, { [field]: items });
+  };
 
   return (
     <>
@@ -220,20 +230,88 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
         <div style={{ background: "white", borderRadius: 12, padding: 20, border: "1px solid rgba(0,0,0,0.06)", marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <h3 style={{ fontSize: 11, color: "#3D405B", textTransform: "uppercase", letterSpacing: 1.5, margin: 0 }}>Action Items</h3>
-            {editButton("action_items", { action_items_mine: [...(entry.action_items_mine || [])], action_items_theirs: [...(entry.action_items_theirs || [])] })}
+            {editButton("action_items", { action_items_mine: (entry.action_items_mine || []).map(a => ({...a})), action_items_theirs: (entry.action_items_theirs || []).map(a => ({...a})) })}
           </div>
           {editingSection === "action_items" ? (
             <>
               <div style={{ marginBottom: 12 }}>
                 <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4 }}>YOU</span>
                 <div style={{ marginTop: 6 }}>
-                  <EditableList items={editData.action_items_mine || []} onChange={items => setEditData({ ...editData, action_items_mine: items })} placeholder="Add action item..." color="#3D405B" />
+                  {(editData.action_items_mine || []).map((item, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                      <textarea
+                        value={item.text}
+                        onChange={e => {
+                          const updated = [...editData.action_items_mine];
+                          updated[i] = { ...updated[i], text: e.target.value };
+                          setEditData({ ...editData, action_items_mine: updated });
+                        }}
+                        placeholder="Add action item..."
+                        rows={1}
+                        style={{
+                          flex: 1, padding: "6px 10px", borderRadius: 6,
+                          border: "1px solid rgba(0,0,0,0.1)", fontSize: 14,
+                          fontFamily: "'DM Sans', sans-serif", background: "#FAFAF8",
+                          resize: "none", overflow: "hidden", lineHeight: 1.5,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <button onClick={() => {
+                        setEditData({ ...editData, action_items_mine: editData.action_items_mine.filter((_, j) => j !== i) });
+                      }} style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "#ccc", fontSize: 18, padding: "4px 4px 0", lineHeight: 1, flexShrink: 0,
+                      }} title="Remove">&times;</button>
+                    </div>
+                  ))}
+                  <button onClick={() => {
+                    setEditData({ ...editData, action_items_mine: [...(editData.action_items_mine || []), { text: "", completed: false }] });
+                  }} style={{
+                    background: "none", border: "1px dashed rgba(0,0,0,0.15)",
+                    borderRadius: 6, padding: "4px 12px", fontSize: 12,
+                    color: "#3D405B", cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", marginTop: 4,
+                  }}>+ Add</button>
                 </div>
               </div>
               <div>
                 <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4 }}>THEM</span>
                 <div style={{ marginTop: 6 }}>
-                  <EditableList items={editData.action_items_theirs || []} onChange={items => setEditData({ ...editData, action_items_theirs: items })} placeholder="Add action item..." color={member.color} />
+                  {(editData.action_items_theirs || []).map((item, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                      <textarea
+                        value={item.text}
+                        onChange={e => {
+                          const updated = [...editData.action_items_theirs];
+                          updated[i] = { ...updated[i], text: e.target.value };
+                          setEditData({ ...editData, action_items_theirs: updated });
+                        }}
+                        placeholder="Add action item..."
+                        rows={1}
+                        style={{
+                          flex: 1, padding: "6px 10px", borderRadius: 6,
+                          border: "1px solid rgba(0,0,0,0.1)", fontSize: 14,
+                          fontFamily: "'DM Sans', sans-serif", background: "#FAFAF8",
+                          resize: "none", overflow: "hidden", lineHeight: 1.5,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <button onClick={() => {
+                        setEditData({ ...editData, action_items_theirs: editData.action_items_theirs.filter((_, j) => j !== i) });
+                      }} style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "#ccc", fontSize: 18, padding: "4px 4px 0", lineHeight: 1, flexShrink: 0,
+                      }} title="Remove">&times;</button>
+                    </div>
+                  ))}
+                  <button onClick={() => {
+                    setEditData({ ...editData, action_items_theirs: [...(editData.action_items_theirs || []), { text: "", completed: false }] });
+                  }} style={{
+                    background: "none", border: "1px dashed rgba(0,0,0,0.15)",
+                    borderRadius: 6, padding: "4px 12px", fontSize: 12,
+                    color: member.color, cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", marginTop: 4,
+                  }}>+ Add</button>
                 </div>
               </div>
               {saveButton}
@@ -241,14 +319,34 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
           ) : (
             <>
               {entry.action_items_mine?.map((a, i) => (
-                <p key={`m${i}`} style={{ fontSize: 14, color: "#444", margin: "4px 0", lineHeight: 1.5 }}>
-                  <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>YOU</span>{a}
-                </p>
+                <div key={`m${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0" }}>
+                  <input type="checkbox" checked={a.completed}
+                    onChange={() => toggleActionItem("action_items_mine", i)}
+                    style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 14, color: "#444", lineHeight: 1.5,
+                    textDecoration: a.completed ? "line-through" : "none",
+                    opacity: a.completed ? 0.5 : 1,
+                  }}>
+                    <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>YOU</span>
+                    {a.text}
+                  </span>
+                </div>
               ))}
               {entry.action_items_theirs?.map((a, i) => (
-                <p key={`t${i}`} style={{ fontSize: 14, color: "#444", margin: "4px 0", lineHeight: 1.5 }}>
-                  <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>THEM</span>{a}
-                </p>
+                <div key={`t${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0" }}>
+                  <input type="checkbox" checked={a.completed}
+                    onChange={() => toggleActionItem("action_items_theirs", i)}
+                    style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 14, color: "#444", lineHeight: 1.5,
+                    textDecoration: a.completed ? "line-through" : "none",
+                    opacity: a.completed ? 0.5 : 1,
+                  }}>
+                    <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>THEM</span>
+                    {a.text}
+                  </span>
+                </div>
               ))}
             </>
           )}
