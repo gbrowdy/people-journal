@@ -9,6 +9,7 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
   const date = new Date(entry.date);
   const [editingSection, setEditingSection] = useState(null);
   const [editData, setEditData] = useState({});
+  const [savingItems, setSavingItems] = useState(new Set());
 
   const startEdit = (section, initialData) => {
     setEditingSection(section);
@@ -57,10 +58,13 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
     }}>Save</button>
   );
 
-  const toggleActionItem = (field, index) => {
+  const toggleActionItem = async (field, index) => {
+    const key = `${field}:${index}`;
+    setSavingItems(prev => new Set([...prev, key]));
     const items = [...entry[field]];
     items[index] = { ...items[index], completed: !items[index].completed };
-    onUpdate(entry.id, { [field]: items });
+    await onUpdate(entry.id, { [field]: items });
+    setSavingItems(prev => { const next = new Set(prev); next.delete(key); return next; });
   };
 
   return (
@@ -318,36 +322,36 @@ export default function EntryDetail({ entry, member, onBack, onDelete, onUpdate 
             </>
           ) : (
             <>
-              {entry.action_items_mine?.map((a, i) => (
-                <div key={`m${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0" }}>
-                  <input type="checkbox" checked={a.completed}
-                    onChange={() => toggleActionItem("action_items_mine", i)}
-                    style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
-                  <span style={{
-                    fontSize: 14, color: "#444", lineHeight: 1.5,
-                    textDecoration: a.completed ? "line-through" : "none",
-                    opacity: a.completed ? 0.5 : 1,
-                  }}>
-                    <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>YOU</span>
-                    {a.text}
-                  </span>
-                </div>
-              ))}
-              {entry.action_items_theirs?.map((a, i) => (
-                <div key={`t${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0" }}>
-                  <input type="checkbox" checked={a.completed}
-                    onChange={() => toggleActionItem("action_items_theirs", i)}
-                    style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
-                  <span style={{
-                    fontSize: 14, color: "#444", lineHeight: 1.5,
-                    textDecoration: a.completed ? "line-through" : "none",
-                    opacity: a.completed ? 0.5 : 1,
-                  }}>
-                    <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>THEM</span>
-                    {a.text}
-                  </span>
-                </div>
-              ))}
+              {entry.action_items_mine?.map((a, i) => {
+                const saving = savingItems.has(`action_items_mine:${i}`);
+                return (
+                  <div key={`m${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0", opacity: saving ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                    <input type="checkbox" checked={a.completed} disabled={saving}
+                      onChange={() => toggleActionItem("action_items_mine", i)}
+                      style={{ marginTop: 3, cursor: saving ? "default" : "pointer", flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, opacity: a.completed ? 0.5 : 1 }}>
+                      <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>YOU</span>
+                      <span style={{ textDecoration: a.completed ? "line-through" : "none" }}>{a.text}</span>
+                    </span>
+                    {saving && <span style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", flexShrink: 0 }}>Saving...</span>}
+                  </div>
+                );
+              })}
+              {entry.action_items_theirs?.map((a, i) => {
+                const saving = savingItems.has(`action_items_theirs:${i}`);
+                return (
+                  <div key={`t${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0", opacity: saving ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                    <input type="checkbox" checked={a.completed} disabled={saving}
+                      onChange={() => toggleActionItem("action_items_theirs", i)}
+                      style={{ marginTop: 3, cursor: saving ? "default" : "pointer", flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, opacity: a.completed ? 0.5 : 1 }}>
+                      <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4, marginRight: 6 }}>THEM</span>
+                      <span style={{ textDecoration: a.completed ? "line-through" : "none" }}>{a.text}</span>
+                    </span>
+                    {saving && <span style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", flexShrink: 0 }}>Saving...</span>}
+                  </div>
+                );
+              })}
             </>
           )}
         </div>

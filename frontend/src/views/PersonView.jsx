@@ -1,3 +1,4 @@
+import { useState } from "react";
 import EntryCard from "../components/EntryCard";
 
 export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate }) {
@@ -22,12 +23,16 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
   ]);
   const openMine = openItems.filter(a => a.field === "action_items_mine");
   const openTheirs = openItems.filter(a => a.field === "action_items_theirs");
+  const [savingItems, setSavingItems] = useState(new Set());
 
-  const toggleItem = (item) => {
+  const toggleItem = async (item) => {
+    const key = `${item.entryId}:${item.field}:${item.index}`;
+    setSavingItems(prev => new Set([...prev, key]));
     const entry = mEntries.find(e => e.id === item.entryId);
     const items = [...entry[item.field]];
     items[item.index] = { ...items[item.index], completed: true };
-    onUpdate(item.entryId, { [item.field]: items });
+    await onUpdate(item.entryId, { [item.field]: items });
+    setSavingItems(prev => { const next = new Set(prev); next.delete(key); return next; });
   };
 
   const formatShortDate = (dateStr) => {
@@ -106,34 +111,40 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
             {openMine.length > 0 && (
               <div style={{ marginBottom: openTheirs.length > 0 ? 14 : 0 }}>
                 <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4 }}>YOU</span>
-                {openMine.map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
-                    <input type="checkbox" onChange={() => toggleItem(item)}
-                      style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
-                    <span style={{
-                      fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace",
-                      whiteSpace: "nowrap", flexShrink: 0,
-                    }}>{formatShortDate(item.date)}</span>
-                  </div>
-                ))}
+                {openMine.map((item, i) => {
+                  const saving = savingItems.has(`${item.entryId}:${item.field}:${item.index}`);
+                  return (
+                    <div key={`${item.entryId}:${item.field}:${item.index}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4, opacity: saving ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                      <input type="checkbox" checked={false} onChange={() => toggleItem(item)} disabled={saving}
+                        style={{ marginTop: 3, cursor: saving ? "default" : "pointer", flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
+                      {saving
+                        ? <span style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", flexShrink: 0 }}>Saving...</span>
+                        : <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap", flexShrink: 0 }}>{formatShortDate(item.date)}</span>
+                      }
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {openTheirs.length > 0 && (
               <div>
                 <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4 }}>THEM</span>
-                {openTheirs.map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
-                    <input type="checkbox" onChange={() => toggleItem(item)}
-                      style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
-                    <span style={{
-                      fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace",
-                      whiteSpace: "nowrap", flexShrink: 0,
-                    }}>{formatShortDate(item.date)}</span>
-                  </div>
-                ))}
+                {openTheirs.map((item, i) => {
+                  const saving = savingItems.has(`${item.entryId}:${item.field}:${item.index}`);
+                  return (
+                    <div key={`${item.entryId}:${item.field}:${item.index}`} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4, opacity: saving ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                      <input type="checkbox" checked={false} onChange={() => toggleItem(item)} disabled={saving}
+                        style={{ marginTop: 3, cursor: saving ? "default" : "pointer", flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
+                      {saving
+                        ? <span style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", flexShrink: 0 }}>Saving...</span>
+                        : <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap", flexShrink: 0 }}>{formatShortDate(item.date)}</span>
+                      }
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
