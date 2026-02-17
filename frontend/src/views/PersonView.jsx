@@ -1,6 +1,6 @@
 import EntryCard from "../components/EntryCard";
 
-export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry }) {
+export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate }) {
   const mEntries = entries
     .filter(e => e.member_id === member.id)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -11,6 +11,29 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
   const avgGrowth = mEntries.length
     ? (mEntries.reduce((s, e) => s + (e.growth_score || 0), 0) / mEntries.length).toFixed(1)
     : "\u2014";
+
+  const openItems = mEntries.flatMap(e => [
+    ...(e.action_items_mine || []).map((a, i) => ({
+      ...a, field: "action_items_mine", index: i, entryId: e.id, date: e.date,
+    })).filter(a => !a.completed),
+    ...(e.action_items_theirs || []).map((a, i) => ({
+      ...a, field: "action_items_theirs", index: i, entryId: e.id, date: e.date,
+    })).filter(a => !a.completed),
+  ]);
+  const openMine = openItems.filter(a => a.field === "action_items_mine");
+  const openTheirs = openItems.filter(a => a.field === "action_items_theirs");
+
+  const toggleItem = (item) => {
+    const entry = mEntries.find(e => e.id === item.entryId);
+    const items = [...entry[item.field]];
+    items[item.index] = { ...items[item.index], completed: true };
+    onUpdate(item.entryId, { [item.field]: items });
+  };
+
+  const formatShortDate = (dateStr) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
 
   return (
     <>
@@ -62,6 +85,57 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
               <div style={{ fontSize: 11, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Entries</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: member.color, fontFamily: "'Fraunces', serif" }}>{mEntries.length}</div>
             </div>
+          </div>
+        )}
+
+        {(openMine.length > 0 || openTheirs.length > 0) && (
+          <div style={{
+            background: "white", borderRadius: 12, padding: 20,
+            border: "1px solid rgba(0,0,0,0.06)", marginBottom: 28,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: 0 }}>
+                Open Action Items
+              </h2>
+              <span style={{
+                fontSize: 11, fontWeight: 600, background: `${member.color}20`, color: member.color,
+                padding: "1px 8px", borderRadius: 10,
+              }}>{openMine.length + openTheirs.length}</span>
+            </div>
+
+            {openMine.length > 0 && (
+              <div style={{ marginBottom: openTheirs.length > 0 ? 14 : 0 }}>
+                <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4 }}>YOU</span>
+                {openMine.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
+                    <input type="checkbox" onChange={() => toggleItem(item)}
+                      style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
+                    <span style={{
+                      fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace",
+                      whiteSpace: "nowrap", flexShrink: 0,
+                    }}>{formatShortDate(item.date)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {openTheirs.length > 0 && (
+              <div>
+                <span style={{ fontSize: 10, background: member.color, color: "white", padding: "1px 6px", borderRadius: 4 }}>THEM</span>
+                {openTheirs.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
+                    <input type="checkbox" onChange={() => toggleItem(item)}
+                      style={{ marginTop: 3, cursor: "pointer", flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>{item.text}</span>
+                    <span style={{
+                      fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace",
+                      whiteSpace: "nowrap", flexShrink: 0,
+                    }}>{formatShortDate(item.date)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
