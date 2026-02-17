@@ -21,6 +21,7 @@ export default function App() {
   const [selectedMember, setSelectedMember] = useState(null);
   const [extractedData, setExtractedData] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [transcript, setTranscript] = useState(null);
 
   const loadData = useCallback(async () => {
     const [teamData, entriesData] = await Promise.all([
@@ -33,21 +34,29 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleExtract = async (transcript, memberName) => {
-    const data = await api.extractTranscript(transcript, memberName);
+  const handleExtract = async (transcriptText, memberName) => {
+    const data = await api.extractTranscript(transcriptText, memberName);
     setExtractedData(data);
+    setTranscript(transcriptText);
     setView("review");
     return data;
   };
 
   const handleSaveEntry = async (data) => {
+    const wrapItems = (items) => (items || []).map(item =>
+      typeof item === "string" ? { text: item, completed: false } : item
+    );
     await api.createEntry({
       member_id: selectedMember.id,
       date: new Date().toISOString(),
       ...data,
+      action_items_mine: wrapItems(data.action_items_mine),
+      action_items_theirs: wrapItems(data.action_items_theirs),
+      transcript,
     });
     await loadData();
     setExtractedData(null);
+    setTranscript(null);
     setView("person");
   };
 
@@ -91,6 +100,7 @@ export default function App() {
           onBack={() => setView("dashboard")}
           onNewEntry={() => setView("new")}
           onSelectEntry={entry => { setSelectedEntry(entry); setView("entry-detail"); }}
+          onUpdate={handleUpdateEntry}
         />
       )}
       {view === "new" && (
