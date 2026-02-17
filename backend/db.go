@@ -19,22 +19,30 @@ type TeamMember struct {
 	Color string `json:"color"`
 }
 
+type ActionItem struct {
+	Text      string `json:"text"`
+	Completed bool   `json:"completed"`
+}
+
 type Entry struct {
-	ID               string   `json:"id"`
-	MemberID         string   `json:"member_id"`
-	Date             string   `json:"date"`
-	Summary          *string  `json:"summary"`
-	MoraleScore      *int     `json:"morale_score"`
-	GrowthScore      *int     `json:"growth_score"`
-	MoraleRationale  *string  `json:"morale_rationale"`
-	GrowthRationale  *string  `json:"growth_rationale"`
-	Tags             []string `json:"tags"`
-	ActionItemsMine  []string `json:"action_items_mine"`
-	ActionItemsTheirs []string `json:"action_items_theirs"`
-	NotableQuotes    []string `json:"notable_quotes"`
-	Blockers         []string `json:"blockers"`
-	Wins             []string `json:"wins"`
-	PrivateNote      *string  `json:"private_note"`
+	ID                string       `json:"id"`
+	MemberID          string       `json:"member_id"`
+	Date              string       `json:"date"`
+	Summary           *string      `json:"summary"`
+	MoraleScore       *int         `json:"morale_score"`
+	GrowthScore       *int         `json:"growth_score"`
+	MoraleRationale   *string      `json:"morale_rationale"`
+	GrowthRationale   *string      `json:"growth_rationale"`
+	Tags              []string     `json:"tags"`
+	ActionItemsMine   []ActionItem `json:"action_items_mine"`
+	ActionItemsTheirs []ActionItem `json:"action_items_theirs"`
+	NotableQuotes     []string     `json:"notable_quotes"`
+	Blockers          []string     `json:"blockers"`
+	Wins              []string     `json:"wins"`
+	PrivateNote       *string      `json:"private_note"`
+	Transcript        *string      `json:"transcript"`
+	CreatedAt         *string      `json:"created_at"`
+	UpdatedAt         *string      `json:"updated_at"`
 }
 
 func InitDB() {
@@ -72,13 +80,12 @@ func InitDB() {
 			notable_quotes TEXT,
 			blockers TEXT,
 			wins TEXT,
-			private_note TEXT
+			private_note TEXT,
+			transcript TEXT,
+			created_at TEXT,
+			updated_at TEXT
 		)
 	`)
-
-	// Migration for existing DBs: add rationale columns if missing
-	DB.Exec("ALTER TABLE entries ADD COLUMN morale_rationale TEXT")
-	DB.Exec("ALTER TABLE entries ADD COLUMN growth_rationale TEXT")
 
 	// Seed default team members if table is empty
 	var count int
@@ -108,10 +115,22 @@ func parseJSONArray(s string) []string {
 	return arr
 }
 
+func parseActionItems(s string) []ActionItem {
+	if s == "" {
+		return []ActionItem{}
+	}
+	var items []ActionItem
+	if err := json.Unmarshal([]byte(s), &items); err != nil {
+		return []ActionItem{}
+	}
+	return items
+}
+
 func scanEntry(row interface{ Scan(...any) error }) (Entry, error) {
 	var e Entry
 	var tags, actionMine, actionTheirs, quotes, blockers, wins sql.NullString
 	var summary, moraleRat, growthRat, privateNote sql.NullString
+	var transcript, createdAt, updatedAt sql.NullString
 	var moraleScore, growthScore sql.NullInt64
 
 	err := row.Scan(
@@ -121,6 +140,7 @@ func scanEntry(row interface{ Scan(...any) error }) (Entry, error) {
 		&tags, &actionMine, &actionTheirs,
 		&quotes, &blockers, &wins,
 		&privateNote,
+		&transcript, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return e, err
@@ -146,10 +166,19 @@ func scanEntry(row interface{ Scan(...any) error }) (Entry, error) {
 	if privateNote.Valid {
 		e.PrivateNote = &privateNote.String
 	}
+	if transcript.Valid {
+		e.Transcript = &transcript.String
+	}
+	if createdAt.Valid {
+		e.CreatedAt = &createdAt.String
+	}
+	if updatedAt.Valid {
+		e.UpdatedAt = &updatedAt.String
+	}
 
 	e.Tags = parseJSONArray(tags.String)
-	e.ActionItemsMine = parseJSONArray(actionMine.String)
-	e.ActionItemsTheirs = parseJSONArray(actionTheirs.String)
+	e.ActionItemsMine = parseActionItems(actionMine.String)
+	e.ActionItemsTheirs = parseActionItems(actionTheirs.String)
 	e.NotableQuotes = parseJSONArray(quotes.String)
 	e.Blockers = parseJSONArray(blockers.String)
 	e.Wins = parseJSONArray(wins.String)
@@ -164,7 +193,7 @@ var entryCols = strings.Join([]string{
 	"morale_rationale", "growth_rationale",
 	"tags", "action_items_mine", "action_items_theirs",
 	"notable_quotes", "blockers", "wins",
-	"private_note",
+	"private_note", "transcript", "created_at", "updated_at",
 }, ", ")
 
 func entryQuery(where string) string {
