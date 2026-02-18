@@ -135,6 +135,16 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check cache
+	extractKey := cacheKey(body.MemberName, body.Transcript)
+	if cached, ok := cacheGet(extractKey, "extract"); ok {
+		var result map[string]any
+		if err := json.Unmarshal([]byte(cached), &result); err == nil {
+			writeJSON(w, 200, result)
+			return
+		}
+	}
+
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	hasAnthropic := anthropicKey != "" && anthropicKey != "your-key-here"
@@ -174,6 +184,8 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "Failed to extract from transcript"})
 		return
 	}
+
+	cacheSet(extractKey, "extract", clean)
 
 	writeJSON(w, 200, extracted)
 }
