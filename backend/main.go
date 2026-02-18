@@ -28,6 +28,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/entries/{id}", handleDeleteEntry)
 
 	mux.HandleFunc("POST /api/extract", handleExtract)
+	mux.HandleFunc("POST /api/prep", handlePrep)
 
 	handler := corsMiddleware(mux)
 
