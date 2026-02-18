@@ -1,4 +1,9 @@
+import { useState } from "react";
+import SearchBar from "../components/SearchBar";
+import { matchesSearch } from "../utils";
+
 export default function Dashboard({ team, entries, onSelectMember, onNewEntry, onOpenSettings, onSelectEntry }) {
+  const [search, setSearch] = useState("");
   const memberEntries = (memberId) =>
     entries.filter(e => e.member_id === memberId).sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -78,36 +83,49 @@ export default function Dashboard({ team, entries, onSelectMember, onNewEntry, o
 
         {entries.length > 0 && (
           <div style={{ marginTop: 32 }}>
-            <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Recent Across Team</h2>
-            {[...entries].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5).map(entry => {
-              const member = team.find(m => m.id === entry.member_id);
-              return (
-                <div key={entry.id} onClick={() => onSelectEntry(entry, member)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
-                    background: "white", borderRadius: 10, marginBottom: 6,
-                    border: "1px solid rgba(0,0,0,0.04)", cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#f9f9f7"}
-                  onMouseLeave={e => e.currentTarget.style.background = "white"}
-                >
-                  <div style={{
-                    width: 26, height: 26, borderRadius: "50%", background: member?.color || "#ccc",
-                    color: "white", fontSize: 11, fontWeight: 700,
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                  }}>{member?.name?.charAt(0) || "?"}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: "#333", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
-                      {entry.summary}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: 0 }}>Recent Across Team</h2>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <SearchBar value={search} onChange={setSearch} placeholder="Search all entries..." />
+            </div>
+            {(() => {
+              const filtered = [...entries]
+                .filter(e => matchesSearch(e, search))
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, search ? 20 : 5);
+              return filtered.length > 0 ? filtered.map(entry => {
+                const member = team.find(m => m.id === entry.member_id);
+                return (
+                  <div key={entry.id} onClick={() => onSelectEntry(entry, member)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+                      background: "white", borderRadius: 10, marginBottom: 6,
+                      border: "1px solid rgba(0,0,0,0.04)", cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#f9f9f7"}
+                    onMouseLeave={e => e.currentTarget.style.background = "white"}
+                  >
+                    <div style={{
+                      width: 26, height: 26, borderRadius: "50%", background: member?.color || "#ccc",
+                      color: "white", fontSize: 11, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>{member?.name?.charAt(0) || "?"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: "#333", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
+                        {entry.summary}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+                      {new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </span>
                   </div>
-                  <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
-                    {new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                </div>
+                );
+              }) : (
+                <p style={{ fontSize: 13, color: "#ccc", fontStyle: "italic", textAlign: "center", padding: 20 }}>No entries match your search.</p>
               );
-            })}
+            })()}
           </div>
         )}
       </div>
