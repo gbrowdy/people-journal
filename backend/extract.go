@@ -16,6 +16,14 @@ var tags = []string{
 	"autonomy", "project update", "conflict", "learning",
 }
 
+func getEnvNonEmpty(key string) string {
+	v := os.Getenv(key)
+	if v == "" || v == "your-key-here" {
+		return ""
+	}
+	return v
+}
+
 func buildExtractionPrompt(memberName, transcript string) string {
 	return fmt.Sprintf(`You are helping an engineering manager process a 1:1 meeting transcript with their report named %s. Extract structured information and respond ONLY with a JSON object (no markdown, no backticks, no preamble). The JSON should have these fields:
 
@@ -145,10 +153,10 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
-	openaiKey := os.Getenv("OPENAI_API_KEY")
-	hasAnthropic := anthropicKey != "" && anthropicKey != "your-key-here"
-	hasOpenAI := openaiKey != "" && openaiKey != "your-key-here"
+	anthropicKey := getEnvNonEmpty("ANTHROPIC_API_KEY")
+	openaiKey := getEnvNonEmpty("OPENAI_API_KEY")
+	hasAnthropic := anthropicKey != ""
+	hasOpenAI := openaiKey != ""
 
 	if !hasAnthropic && !hasOpenAI {
 		writeJSON(w, 500, map[string]string{"error": "No API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env"})
