@@ -1,5 +1,8 @@
 import { useState } from "react";
 import EntryCard from "../components/EntryCard";
+import SearchBar from "../components/SearchBar";
+import FilterBar from "../components/FilterBar";
+import { matchesSearch, matchesFilters } from "../utils";
 
 export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate }) {
   const mEntries = entries
@@ -24,6 +27,13 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
   const openMine = openItems.filter(a => a.field === "action_items_mine");
   const openTheirs = openItems.filter(a => a.field === "action_items_theirs");
   const [savingItems, setSavingItems] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [dateRange, setDateRange] = useState("all");
+
+  const filteredEntries = mEntries.filter(e =>
+    matchesSearch(e, search) && matchesFilters(e, { tags: selectedTags, dateRange })
+  );
 
   const toggleItem = async (item) => {
     const key = `${item.entryId}:${item.field}:${item.index}`;
@@ -150,6 +160,19 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
           </div>
         )}
 
+        {mEntries.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <SearchBar value={search} onChange={setSearch} placeholder={`Search ${member.name}'s entries...`} />
+            <div style={{ marginTop: 10 }}>
+              <FilterBar
+                selectedTags={selectedTags} onTagsChange={setSelectedTags}
+                dateRange={dateRange} onDateRangeChange={setDateRange}
+                color={member.color}
+              />
+            </div>
+          </div>
+        )}
+
         {mEntries.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#999" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>&#128221;</div>
@@ -158,12 +181,21 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
           </div>
         ) : (
           <div>
-            <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Timeline</h2>
-            {mEntries.map(entry => (
+            <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
+              Timeline
+              {(search || selectedTags.length > 0 || dateRange !== "all") && (
+                <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 8 }}>
+                  ({filteredEntries.length} of {mEntries.length})
+                </span>
+              )}
+            </h2>
+            {filteredEntries.length > 0 ? filteredEntries.map(entry => (
               <EntryCard key={entry.id} entry={entry} member={member}
                 onClick={() => onSelectEntry(entry)}
               />
-            ))}
+            )) : (
+              <p style={{ fontSize: 13, color: "#ccc", fontStyle: "italic", textAlign: "center", padding: 20 }}>No entries match your filters.</p>
+            )}
           </div>
         )}
       </div>
