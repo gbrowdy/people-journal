@@ -21,6 +21,7 @@ export function matchesFilters(entry, { tags, dateRange }) {
     const days = parseInt(dateRange, 10);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
     if (new Date(entry.date) < cutoff) return false;
   }
   return true;
