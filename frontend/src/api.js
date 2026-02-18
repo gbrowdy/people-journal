@@ -65,3 +65,10 @@ export function extractTranscript(transcript, memberName) {
     body: JSON.stringify({ transcript, member_name: memberName }),
   });
 }
+
+export function fetchPrep(memberId) {
+  return request("/api/prep", {
+    method: "POST",
+    body: JSON.stringify({ member_id: memberId }),
+  });
+}
