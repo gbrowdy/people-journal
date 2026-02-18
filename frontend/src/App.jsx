@@ -6,6 +6,7 @@ import NewEntry from "./views/NewEntry";
 import ReviewEntry from "./views/ReviewEntry";
 import EntryDetail from "./views/EntryDetail";
 import Settings from "./views/Settings";
+import PrepView from "./views/PrepView";
 
 const pageStyle = {
   minHeight: "100vh",
@@ -92,6 +93,7 @@ export default function App() {
           onNewEntry={() => { setSelectedMember(null); setView("new"); }}
           onOpenSettings={() => setView("settings")}
           onSelectEntry={(entry, member) => { setSelectedMember(member); setSelectedEntry(entry); setView("entry-detail"); }}
+          onPrep={m => { setSelectedMember(m); setView("prep"); }}
         />
       )}
       {view === "person" && selectedMember && (
@@ -101,6 +103,7 @@ export default function App() {
           onNewEntry={() => setView("new")}
           onSelectEntry={entry => { setSelectedEntry(entry); setView("entry-detail"); }}
           onUpdate={handleUpdateEntry}
+          onPrep={() => setView("prep")}
         />
       )}
       {view === "new" && (
@@ -124,6 +127,12 @@ export default function App() {
           onBack={() => setView("person")}
           onDelete={handleDeleteEntry}
           onUpdate={handleUpdateEntry}
+        />
+      )}
+      {view === "prep" && selectedMember && (
+        <PrepView
+          member={selectedMember}
+          onBack={() => setView("person")}
         />
       )}
       {view === "settings" && (

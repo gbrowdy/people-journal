@@ -5,7 +5,7 @@ import FilterBar from "../components/FilterBar";
 import { matchesSearch, matchesFilters } from "../utils";
 import TrendChart from "../components/TrendChart";
 
-export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate }) {
+export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate, onPrep }) {
   const mEntries = entries
     .filter(e => e.member_id === member.id)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -71,11 +71,19 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
             <span style={{ fontSize: 12, color: "#999" }}>{member.role}</span>
           </div>
         </div>
-        <button onClick={onNewEntry} style={{
-          padding: "8px 20px", borderRadius: 8,
-          background: member.color, color: "white", border: "none",
-          fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
-        }}>+ New Entry</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onPrep} style={{
+            padding: "8px 16px", borderRadius: 8,
+            background: `${member.color}15`, color: member.color,
+            border: `1px solid ${member.color}30`,
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+          }}>Prep</button>
+          <button onClick={onNewEntry} style={{
+            padding: "8px 20px", borderRadius: 8,
+            background: member.color, color: "white", border: "none",
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+          }}>+ New Entry</button>
+        </div>
       </div>
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 24px" }}>
         {mEntries.length > 0 && (

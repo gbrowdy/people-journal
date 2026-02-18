@@ -2,7 +2,7 @@ import { useState } from "react";
 import SearchBar from "../components/SearchBar";
 import { matchesSearch } from "../utils";
 
-export default function Dashboard({ team, entries, onSelectMember, onNewEntry, onOpenSettings, onSelectEntry }) {
+export default function Dashboard({ team, entries, onSelectMember, onNewEntry, onOpenSettings, onSelectEntry, onPrep }) {
   const [search, setSearch] = useState("");
   const memberEntries = (memberId) =>
     entries.filter(e => e.member_id === memberId).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -70,7 +70,15 @@ export default function Dashboard({ team, entries, onSelectMember, onNewEntry, o
                       <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace" }}>
                         {new Date(latest.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </span>
-                      <span style={{ fontSize: 11, color: "#bbb" }}>{mEntries.length} entries</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button onClick={(e) => { e.stopPropagation(); onPrep(member); }} style={{
+                          padding: "2px 8px", borderRadius: 4, fontSize: 10,
+                          fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                          background: `${member.color}15`, color: member.color,
+                          border: `1px solid ${member.color}30`, cursor: "pointer",
+                        }}>Prep</button>
+                        <span style={{ fontSize: 11, color: "#bbb" }}>{mEntries.length} entries</span>
+                      </div>
                     </div>
                   </>
                 ) : (
