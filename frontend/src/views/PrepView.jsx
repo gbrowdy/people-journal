@@ -159,7 +159,7 @@ export default function PrepView({ member, onBack }) {
                 border: "1px solid rgba(0,0,0,0.06)", marginBottom: 20,
               }}>
                 <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: "0 0 12px" }}>
-                  Unresolved Blockers
+                  Recent Blockers
                 </h2>
                 {data.unresolved_blockers.map((b, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0" }}>

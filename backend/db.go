@@ -89,10 +89,11 @@ func InitDB() {
 
 	DB.Exec(`
 		CREATE TABLE IF NOT EXISTS cache (
-			key TEXT PRIMARY KEY,
+			key TEXT NOT NULL,
 			category TEXT NOT NULL,
 			value TEXT NOT NULL,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			PRIMARY KEY (key, category)
 		)
 	`)
 
