@@ -3,6 +3,7 @@ import EntryCard from "../components/EntryCard";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import { matchesSearch, matchesFilters } from "../utils";
+import TrendChart from "../components/TrendChart";
 
 export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate }) {
   const mEntries = entries
@@ -100,6 +101,12 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
               <div style={{ fontSize: 11, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Entries</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: member.color, fontFamily: "'Fraunces', serif" }}>{mEntries.length}</div>
             </div>
+          </div>
+        )}
+
+        {mEntries.length >= 2 && (
+          <div style={{ marginBottom: 28 }}>
+            <TrendChart entries={mEntries} color={member.color} />
           </div>
         )}
 
