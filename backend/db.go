@@ -87,6 +87,15 @@ func InitDB() {
 		)
 	`)
 
+	DB.Exec(`
+		CREATE TABLE IF NOT EXISTS cache (
+			key TEXT PRIMARY KEY,
+			category TEXT NOT NULL,
+			value TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)
+	`)
+
 	// Seed default team members if table is empty
 	var count int
 	DB.QueryRow("SELECT COUNT(*) FROM team_members").Scan(&count)
