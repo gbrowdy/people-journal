@@ -38,12 +38,11 @@ func buildPrepPrompt(memberName string, entries []Entry) string {
 	sb.WriteString(fmt.Sprintf(
 		"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
 			"Below are the last %d meeting entries (newest first). "+
-			"Generate a concise bullet-point briefing with these three sections:\n\n"+
+			"Generate a concise bullet-point briefing with these two sections:\n\n"+
 			"**Follow up on** — open action items and unresolved topics to revisit\n"+
-			"**Watch for** — morale/growth concerns or patterns worth probing\n"+
-			"**Talking points** — suggested things to bring up\n\n"+
+			"**Watch for** — morale/growth concerns or patterns worth probing\n\n"+
 			"Keep bullets short and scannable. No narrative prose. "+
-			"Respond ONLY with the three sections and their bullets, using markdown formatting.\n\n",
+			"Respond ONLY with the two sections and their bullets, using markdown formatting.\n\n",
 		memberName, len(entries),
 	))
 
