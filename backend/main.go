@@ -27,6 +27,7 @@ func main() {
 	mux.HandleFunc("PUT /api/entries/{id}", handleUpdateEntry)
 	mux.HandleFunc("DELETE /api/entries/{id}", handleDeleteEntry)
 
+	mux.HandleFunc("GET /api/config", handleGetConfig)
 	mux.HandleFunc("POST /api/extract", handleExtract)
 	mux.HandleFunc("POST /api/prep", handlePrep)
 

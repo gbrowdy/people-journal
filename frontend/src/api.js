@@ -66,6 +66,10 @@ export function extractTranscript(transcript, memberName) {
   });
 }
 
+export function fetchConfig() {
+  return request("/api/config");
+}
+
 export function fetchPrep(memberId) {
   return request("/api/prep", {
     method: "POST",

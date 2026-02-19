@@ -5,7 +5,7 @@ import FilterBar from "../components/FilterBar";
 import { matchesSearch, matchesFilters } from "../utils";
 import TrendChart from "../components/TrendChart";
 
-export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate, onPrep }) {
+export default function PersonView({ member, entries, onBack, onNewEntry, onSelectEntry, onUpdate, onPrep, config }) {
   const mEntries = entries
     .filter(e => e.member_id === member.id)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -72,6 +72,20 @@ export default function PersonView({ member, entries, onBack, onNewEntry, onSele
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          {config.jira_configured && member.jira_account_id && (
+            <a
+              href={`${config.jira_base_url}/jira/people/${member.jira_account_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: "8px 16px", borderRadius: 8,
+                background: "white", color: "#666",
+                border: "1px solid rgba(0,0,0,0.12)",
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 13,
+                cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center",
+              }}
+            >View in JIRA</a>
+          )}
           <button onClick={onPrep} style={{
             padding: "8px 16px", borderRadius: 8,
             background: `${member.color}15`, color: member.color,

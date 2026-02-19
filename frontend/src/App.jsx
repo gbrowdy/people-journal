@@ -23,14 +23,17 @@ export default function App() {
   const [extractedData, setExtractedData] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [transcript, setTranscript] = useState(null);
+  const [config, setConfig] = useState({});
 
   const loadData = useCallback(async () => {
-    const [teamData, entriesData] = await Promise.all([
+    const [teamData, entriesData, configData] = await Promise.all([
       api.fetchTeam(),
       api.fetchEntries(),
+      api.fetchConfig().catch(() => ({})),
     ]);
     setTeam(teamData);
     setEntries(entriesData);
+    setConfig(configData);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -104,6 +107,7 @@ export default function App() {
           onSelectEntry={entry => { setSelectedEntry(entry); setView("entry-detail"); }}
           onUpdate={handleUpdateEntry}
           onPrep={() => setView("prep")}
+          config={config}
         />
       )}
       {view === "new" && (

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -112,6 +113,19 @@ func handleDeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
+}
+
+// ─── Config Handler ─────────────────────────────────────
+
+func handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	configured := jiraConfigured()
+	config := map[string]any{
+		"jira_configured": configured,
+	}
+	if configured {
+		config["jira_base_url"] = strings.TrimRight(os.Getenv("JIRA_BASE_URL"), "/")
+	}
+	writeJSON(w, 200, config)
 }
 
 // ─── Entry Handlers ─────────────────────────────────────
