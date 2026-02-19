@@ -1,11 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 type PrepResponse struct {
@@ -16,6 +18,11 @@ type PrepResponse struct {
 	UnresolvedBlockers []string         `json:"unresolved_blockers"`
 	MoraleScores       []ScorePoint     `json:"morale_scores"`
 	GrowthScores       []ScorePoint     `json:"growth_scores"`
+	JIRAAssigned       []JIRATicket     `json:"jira_assigned,omitempty"`
+	JIRACompleted      []JIRATicket     `json:"jira_completed,omitempty"`
+	JIRABlocked        []JIRATicket     `json:"jira_blocked,omitempty"`
+	JIRASprintStats    *JIRASprintStats `json:"jira_sprint_stats,omitempty"`
+	JIRABoardURL       string           `json:"jira_board_url,omitempty"`
 }
 
 type PrepActionItem struct {
@@ -33,18 +40,36 @@ type ScorePoint struct {
 	Score int    `json:"score"`
 }
 
-func buildPrepPrompt(memberName string, entries []Entry) string {
+func buildPrepPrompt(memberName string, entries []Entry, jira *JIRAContext) string {
+	hasJIRA := jira != nil && (len(jira.Assigned) > 0 || len(jira.Completed) > 0 || len(jira.Blocked) > 0)
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(
-		"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
-			"Below are the last %d meeting entries (newest first). "+
-			"Generate a concise bullet-point briefing with these two sections:\n\n"+
-			"**Follow up on** — open action items and unresolved topics to revisit\n"+
-			"**Watch for** — morale/growth concerns or patterns worth probing\n\n"+
-			"Keep bullets short and scannable. No narrative prose. "+
-			"Respond ONLY with the two sections and their bullets, using markdown formatting.\n\n",
-		memberName, len(entries),
-	))
+
+	if hasJIRA {
+		sb.WriteString(fmt.Sprintf(
+			"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
+				"Below are the last %d meeting entries (newest first). "+
+				"Generate a concise bullet-point briefing with these three sections:\n\n"+
+				"**Follow up on** — open action items and unresolved topics to revisit\n"+
+				"**Watch for** — morale/growth concerns or patterns worth probing\n"+
+				"**Bring up** — topics grounded in their current JIRA activity worth discussing\n\n"+
+				"When an action item from a previous 1:1 clearly maps to a JIRA ticket, reference the ticket status instead of treating it as a separate open item.\n\n"+
+				"Keep bullets short and scannable. No narrative prose. "+
+				"Respond ONLY with the three sections and their bullets, using markdown formatting.\n\n",
+			memberName, len(entries),
+		))
+	} else {
+		sb.WriteString(fmt.Sprintf(
+			"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
+				"Below are the last %d meeting entries (newest first). "+
+				"Generate a concise bullet-point briefing with these two sections:\n\n"+
+				"**Follow up on** — open action items and unresolved topics to revisit\n"+
+				"**Watch for** — morale/growth concerns or patterns worth probing\n\n"+
+				"Keep bullets short and scannable. No narrative prose. "+
+				"Respond ONLY with the two sections and their bullets, using markdown formatting.\n\n",
+			memberName, len(entries),
+		))
+	}
 
 	for i, e := range entries {
 		sb.WriteString(fmt.Sprintf("--- Entry %d (%s) ---\n", i+1, e.Date))
@@ -97,6 +122,50 @@ func buildPrepPrompt(memberName string, entries []Entry) string {
 		if len(e.NotableQuotes) > 0 {
 			sb.WriteString(fmt.Sprintf("Notable quotes: %s\n", strings.Join(e.NotableQuotes, "; ")))
 		}
+		sb.WriteString("\n")
+	}
+
+	if hasJIRA {
+		sb.WriteString("--- Current JIRA Activity ---\n")
+
+		if len(jira.Assigned) > 0 {
+			sb.WriteString("Assigned tickets (current sprint):\n")
+			for _, t := range jira.Assigned {
+				line := fmt.Sprintf("  - %s: %s [%s", t.Key, t.Summary, t.Status)
+				if t.Flagged {
+					line += ", flagged"
+				}
+				line += "]"
+				if t.EpicName != "" {
+					line += fmt.Sprintf(" (Epic: %s)", t.EpicName)
+				}
+				sb.WriteString(line + "\n")
+			}
+		}
+
+		if len(jira.Completed) > 0 {
+			sb.WriteString("Recently completed:\n")
+			for _, t := range jira.Completed {
+				line := fmt.Sprintf("  - %s: %s", t.Key, t.Summary)
+				if t.EpicName != "" {
+					line += fmt.Sprintf(" (Epic: %s)", t.EpicName)
+				}
+				sb.WriteString(line + "\n")
+			}
+		}
+
+		if len(jira.Blocked) > 0 {
+			sb.WriteString("Blocked/flagged:\n")
+			for _, t := range jira.Blocked {
+				sb.WriteString(fmt.Sprintf("  - %s: %s\n", t.Key, t.Summary))
+			}
+		}
+
+		if jira.SprintStats != nil {
+			sb.WriteString(fmt.Sprintf("Sprint stats: %d/%d points completed, %d points carried over\n",
+				jira.SprintStats.PointsCompleted, jira.SprintStats.PointsCommitted, jira.SprintStats.Carryover))
+		}
+
 		sb.WriteString("\n")
 	}
 
@@ -154,9 +223,10 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch member name
+	// Fetch member name and JIRA account ID
 	var memberName string
-	err := DB.QueryRow("SELECT name FROM team_members WHERE id = ?", body.MemberID).Scan(&memberName)
+	var jiraAccountID sql.NullString
+	err := DB.QueryRow("SELECT name, jira_account_id FROM team_members WHERE id = ?", body.MemberID).Scan(&memberName, &jiraAccountID)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "member not found"})
 		return
@@ -187,13 +257,17 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build cache key from member ID + entry IDs + updated_at
-	keyParts := []string{body.MemberID}
+	// Build cache key from member ID + entry IDs + updated_at + jira_account_id + today's date
+	// Today's date ensures JIRA data refreshes daily (ticket statuses change constantly)
+	keyParts := []string{body.MemberID, time.Now().Format("2006-01-02")}
 	for _, e := range entries {
 		keyParts = append(keyParts, e.ID)
 		if e.UpdatedAt != nil {
 			keyParts = append(keyParts, *e.UpdatedAt)
 		}
+	}
+	if jiraAccountID.Valid {
+		keyParts = append(keyParts, jiraAccountID.String)
 	}
 	key := cacheKey(keyParts...)
 
@@ -209,8 +283,36 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 	// Compute structured data
 	openMine, openTheirs, tags, blockers, moraleScores, growthScores := computeStructuredPrep(entries)
 
+	// Fetch JIRA activity if configured
+	var jiraCtx *JIRAContext
+	var accountID string
+	if jiraConfigured() {
+		if jiraAccountID.Valid {
+			accountID = jiraAccountID.String
+		} else {
+			resolved, err := resolveJIRAUser(memberName)
+			if err != nil {
+				fmt.Println("JIRA: user resolution failed:", err)
+			} else {
+				accountID = resolved
+				// Cache on team member
+				DB.Exec("UPDATE team_members SET jira_account_id = ? WHERE id = ?", resolved, body.MemberID)
+			}
+		}
+
+		if accountID != "" {
+			sinceDate := entries[len(entries)-1].Date // oldest of the last 5
+			ctx, err := fetchJIRAActivity(accountID, sinceDate)
+			if err != nil {
+				fmt.Println("JIRA: activity fetch failed:", err)
+			} else {
+				jiraCtx = &ctx
+			}
+		}
+	}
+
 	// Call AI for briefing
-	prompt := buildPrepPrompt(memberName, entries)
+	prompt := buildPrepPrompt(memberName, entries, jiraCtx)
 
 	var briefingText string
 	var aiErr error
@@ -233,6 +335,15 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 			MoraleScores:       moraleScores,
 			GrowthScores:       growthScores,
 		}
+		if jiraCtx != nil {
+			resp.JIRAAssigned = jiraCtx.Assigned
+			resp.JIRACompleted = jiraCtx.Completed
+			resp.JIRABlocked = jiraCtx.Blocked
+			resp.JIRASprintStats = jiraCtx.SprintStats
+			if jiraCtx.JIRABaseURL != "" {
+				resp.JIRABoardURL = fmt.Sprintf("%s/jira/people/%s", jiraCtx.JIRABaseURL, accountID)
+			}
+		}
 		writeJSON(w, 200, resp)
 		return
 	}
@@ -250,6 +361,15 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 		UnresolvedBlockers: blockers,
 		MoraleScores:       moraleScores,
 		GrowthScores:       growthScores,
+	}
+	if jiraCtx != nil {
+		resp.JIRAAssigned = jiraCtx.Assigned
+		resp.JIRACompleted = jiraCtx.Completed
+		resp.JIRABlocked = jiraCtx.Blocked
+		resp.JIRASprintStats = jiraCtx.SprintStats
+		if jiraCtx.JIRABaseURL != "" {
+			resp.JIRABoardURL = fmt.Sprintf("%s/jira/people/%s", jiraCtx.JIRABaseURL, accountID)
+		}
 	}
 
 	// Cache the response
