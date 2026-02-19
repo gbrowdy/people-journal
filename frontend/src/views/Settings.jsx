@@ -91,6 +91,17 @@ export default function Settings({ team, onSave, onBack }) {
                       style={{ width: "100%", height: 30, border: "none", borderRadius: 6, cursor: "pointer", padding: 0 }}
                     />
                   </div>
+                  <div style={{ flex: "1 1 180px" }}>
+                    <label style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: 1 }}>JIRA Account ID</label>
+                    <input value={member.jira_account_id || ""} onChange={e => updateMember(idx, "jira_account_id", e.target.value || null)}
+                      placeholder="Auto-detected"
+                      style={{
+                        width: "100%", padding: "6px 10px", border: "1px solid rgba(0,0,0,0.12)",
+                        borderRadius: 6, fontSize: 14, fontFamily: "'DM Mono', monospace",
+                        background: "#FAFAF8", boxSizing: "border-box", color: "#888",
+                      }}
+                    />
+                  </div>
                   <div style={{ flex: "0 0 32px", display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
                     <button onClick={() => {
                       if (confirm(`Remove ${member.name || "this member"}? This will also delete all their entries.`))

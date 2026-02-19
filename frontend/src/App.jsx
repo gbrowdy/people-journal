@@ -79,7 +79,7 @@ export default function App() {
 
   const handleSaveTeam = async ({ updated, added, deleted }) => {
     await Promise.all([
-      ...updated.map(m => api.updateTeamMember(m.id, { name: m.name, role: m.role, color: m.color })),
+      ...updated.map(m => api.updateTeamMember(m.id, { name: m.name, role: m.role, color: m.color, jira_account_id: m.jira_account_id })),
       ...added.map(m => api.createTeamMember({ name: m.name, role: m.role, color: m.color })),
       ...deleted.map(id => api.deleteTeamMember(id)),
     ]);

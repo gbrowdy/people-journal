@@ -75,17 +75,20 @@ func handleCreateTeamMember(w http.ResponseWriter, r *http.Request) {
 func handleUpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var body struct {
-		Name  string `json:"name"`
-		Role  string `json:"role"`
-		Color string `json:"color"`
+		Name          string  `json:"name"`
+		Role          string  `json:"role"`
+		Color         string  `json:"color"`
+		JiraAccountID *string `json:"jira_account_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid json"}`, 400)
 		return
 	}
 
-	res, _ := DB.Exec("UPDATE team_members SET name = ?, role = ?, color = ? WHERE id = ?",
-		body.Name, body.Role, body.Color, id)
+	res, _ := DB.Exec(
+		"UPDATE team_members SET name = ?, role = ?, color = ?, jira_account_id = ? WHERE id = ?",
+		body.Name, body.Role, body.Color, body.JiraAccountID, id,
+	)
 
 	if n, _ := res.RowsAffected(); n == 0 {
 		http.Error(w, `{"error":"Member not found"}`, 404)
