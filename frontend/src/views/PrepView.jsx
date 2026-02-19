@@ -127,6 +127,94 @@ export default function PrepView({ member, onBack }) {
               </div>
             )}
 
+            {/* JIRA Activity */}
+            {(data.jira_assigned?.length > 0 || data.jira_completed?.length > 0 || data.jira_blocked?.length > 0) && (
+              <div style={{
+                background: "white", borderRadius: 12, padding: 20,
+                border: "1px solid rgba(0,0,0,0.06)", marginBottom: 20,
+              }}>
+                <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: "0 0 12px" }}>
+                  JIRA Activity
+                </h2>
+
+                {/* Sprint Stats */}
+                {data.jira_sprint_stats && (
+                  <div style={{
+                    display: "flex", gap: 16, marginBottom: 14, padding: "10px 14px",
+                    background: "#FAFAF8", borderRadius: 8,
+                  }}>
+                    <div style={{ textAlign: "center", flex: 1 }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: member.color, fontFamily: "'Fraunces', serif" }}>
+                        {data.jira_sprint_stats.points_completed}/{data.jira_sprint_stats.points_committed}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5 }}>Points</div>
+                    </div>
+                    <div style={{ textAlign: "center", flex: 1 }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: data.jira_sprint_stats.carryover > 0 ? "#E07A5F" : member.color, fontFamily: "'Fraunces', serif" }}>
+                        {data.jira_sprint_stats.carryover}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5 }}>Carryover</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Blocked/Flagged tickets */}
+                {data.jira_blocked?.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <span style={{ fontSize: 10, background: "#E07A5F", color: "white", padding: "1px 6px", borderRadius: 4 }}>BLOCKED</span>
+                    {data.jira_blocked.map((ticket, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
+                        <span style={{ color: "#E07A5F", fontSize: 13, flexShrink: 0 }}>&bull;</span>
+                        <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#888" }}>{ticket.key}</span>{" "}
+                          {ticket.summary}
+                          {ticket.epic_name && <span style={{ fontSize: 11, color: "#aaa", marginLeft: 6 }}>{ticket.epic_name}</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Assigned tickets */}
+                {data.jira_assigned?.length > 0 && (
+                  <div style={{ marginBottom: data.jira_completed?.length > 0 ? 14 : 0 }}>
+                    <span style={{ fontSize: 10, background: "#3D405B", color: "white", padding: "1px 6px", borderRadius: 4 }}>IN PROGRESS</span>
+                    {data.jira_assigned.map((ticket, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
+                        <span style={{ color: "#bbb", fontSize: 13, flexShrink: 0 }}>&bull;</span>
+                        <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5, flex: 1 }}>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#888" }}>{ticket.key}</span>{" "}
+                          {ticket.summary}
+                          {ticket.epic_name && <span style={{ fontSize: 11, color: "#aaa", marginLeft: 6 }}>{ticket.epic_name}</span>}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap", flexShrink: 0 }}>
+                          {ticket.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completed tickets */}
+                {data.jira_completed?.length > 0 && (
+                  <div>
+                    <span style={{ fontSize: 10, background: "#81B29A", color: "white", padding: "1px 6px", borderRadius: 4 }}>
+                      COMPLETED ({data.jira_completed.length})
+                    </span>
+                    {data.jira_completed.map((ticket, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0", paddingLeft: 4 }}>
+                        <span style={{ color: "#81B29A", fontSize: 13, flexShrink: 0 }}>&bull;</span>
+                        <span style={{ fontSize: 14, color: "#888", lineHeight: 1.5, flex: 1, textDecoration: "line-through", textDecorationColor: "#ddd" }}>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12 }}>{ticket.key}</span>{" "}
+                          {ticket.summary}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Recent Tags */}
             {data.recent_tags?.length > 0 && (
               <div style={{
