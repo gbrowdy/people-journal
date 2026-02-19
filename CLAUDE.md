@@ -16,6 +16,9 @@ backend/          Go HTTP server (port 3001)
   db.go           SQLite schema, seed data, model structs, scan helpers
   handlers.go     HTTP handlers for team + entry CRUD
   extract.go      Anthropic/OpenAI transcript extraction
+  prep.go         Pre-meeting prep briefing generation
+  jira.go         JIRA REST API client (optional integration)
+  cache.go        Response caching helpers
   .env            API keys (never commit this)
 
 frontend/         Vite + React app (port 5173)
@@ -24,7 +27,7 @@ frontend/         Vite + React app (port 5173)
     api.js        Fetch wrappers for all backend endpoints
     constants.js  TAGS array
     components/   PulseBar, PulseSelector, TagPill, EntryCard, EditableList
-    views/        Dashboard, PersonView, NewEntry, ReviewEntry, EntryDetail, Settings
+    views/        Dashboard, PersonView, NewEntry, ReviewEntry, EntryDetail, Settings, PrepView
 ```
 
 ## Running locally
@@ -48,13 +51,14 @@ Open http://localhost:5173. The Vite dev server proxies `/api` requests to the b
 - **No auth** — personal, local tool. Can add later if needed.
 - **AI API calls happen server-side** (`POST /api/extract`) to keep keys out of the browser. Anthropic preferred, OpenAI as fallback.
 - **Inline styles** throughout the frontend — carried over from the original Artifact prototype. No CSS framework.
+- **JIRA integration** (optional) — configured via `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` in `.env`. When set, the prep view fetches the team member's JIRA activity (current sprint tickets, recently completed, blocked items, sprint stats) and feeds it to the AI briefing. JIRA account IDs are auto-resolved by display name and cached on the team member row.
 
 ## API routes
 
 ```
 GET    /api/team              All team members
 POST   /api/team              Create a team member
-PUT    /api/team/{id}         Update a team member (name, role, color)
+PUT    /api/team/{id}         Update a team member (name, role, color, jira_account_id)
 DELETE /api/team/{id}         Delete a team member and their entries
 
 GET    /api/entries            All entries (optional ?member_id= filter)
@@ -64,6 +68,8 @@ PUT    /api/entries/{id}       Partial update entry (only sent fields are change
 DELETE /api/entries/{id}       Delete entry
 
 POST   /api/extract            Send { transcript, member_name }, get structured data back
+POST   /api/prep               Pre-meeting briefing with AI + structured data (+ JIRA if configured)
+GET    /api/config              App config (JIRA configured, base URL)
 ```
 
 ## Database
