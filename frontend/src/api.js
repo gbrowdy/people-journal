@@ -70,9 +70,9 @@ export function fetchConfig() {
   return request("/api/config");
 }
 
-export function fetchPrep(memberId) {
+export function fetchPrep(memberId, { force = false } = {}) {
   return request("/api/prep", {
     method: "POST",
-    body: JSON.stringify({ member_id: memberId }),
+    body: JSON.stringify({ member_id: memberId, force }),
   });
 }

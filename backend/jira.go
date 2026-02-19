@@ -24,7 +24,6 @@ type JIRATicket struct {
 type JIRASprintStats struct {
 	PointsCommitted int `json:"points_committed"`
 	PointsCompleted int `json:"points_completed"`
-	Carryover       int `json:"carryover"`
 }
 
 type JIRAContext struct {
@@ -51,6 +50,7 @@ func jiraRequest(method, path string, body io.Reader) ([]byte, error) {
 	token := getEnvNonEmpty("JIRA_API_TOKEN")
 
 	fullURL := baseURL + path
+	log.Printf("[JIRA] %s %s", method, fullURL)
 
 	req, err := http.NewRequest(method, fullURL, body)
 	if err != nil {
@@ -74,6 +74,8 @@ func jiraRequest(method, path string, body io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("jira: failed to read response: %w", err)
 	}
 
+	log.Printf("[JIRA] %s %s → %d (%d bytes)", method, path, resp.StatusCode, len(data))
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("jira: %s %s returned %d: %s", method, path, resp.StatusCode, string(data))
 	}
@@ -84,6 +86,7 @@ func jiraRequest(method, path string, body io.Reader) ([]byte, error) {
 // ─── User Search ────────────────────────────────────────
 
 func resolveJIRAUser(displayName string) (string, error) {
+	log.Printf("[JIRA] Searching for user: %q", displayName)
 	path := "/rest/api/3/user/search?query=" + url.QueryEscape(displayName)
 
 	data, err := jiraRequest("GET", path, nil)
@@ -96,6 +99,8 @@ func resolveJIRAUser(displayName string) (string, error) {
 		return "", fmt.Errorf("jira: failed to parse user search response: %w", err)
 	}
 
+	log.Printf("[JIRA] User search returned %d results", len(users))
+
 	// Filter to active users only
 	var activeUsers []map[string]any
 	for _, u := range users {
@@ -106,19 +111,24 @@ func resolveJIRAUser(displayName string) (string, error) {
 	}
 
 	if len(activeUsers) == 0 {
-		return "", fmt.Errorf("jira: no active users found for %q", displayName)
+		return "", fmt.Errorf("jira: no active users found for %q (%d total results, none active)", displayName, len(users))
 	}
 
 	// Try exact match (case-insensitive) first
 	for _, u := range activeUsers {
 		name := stringField(u, "displayName")
 		if strings.EqualFold(name, displayName) {
-			return stringField(u, "accountId"), nil
+			accountID := stringField(u, "accountId")
+			log.Printf("[JIRA] Resolved %q → %s (exact match)", displayName, accountID)
+			return accountID, nil
 		}
 	}
 
 	// Fall back to first active user
-	return stringField(activeUsers[0], "accountId"), nil
+	accountID := stringField(activeUsers[0], "accountId")
+	fallbackName := stringField(activeUsers[0], "displayName")
+	log.Printf("[JIRA] No exact match for %q, using first active user: %q (%s)", displayName, fallbackName, accountID)
+	return accountID, nil
 }
 
 // ─── JQL Search ─────────────────────────────────────────
@@ -148,7 +158,7 @@ func searchJIRA(jql string, fields []string) ([]map[string]any, error) {
 
 // ─── Issue Parsing ──────────────────────────────────────
 
-func parseJIRAIssue(issue map[string]any) JIRATicket {
+func parseJIRAIssue(issue map[string]any, epicField string) JIRATicket {
 	ticket := JIRATicket{
 		Key: stringField(issue, "key"),
 	}
@@ -175,31 +185,25 @@ func parseJIRAIssue(issue map[string]any) JIRATicket {
 		}
 	}
 
-	// Epic name: try customfield_10014
-	if epicName := stringField(fields, "customfield_10014"); epicName != "" {
+	// Epic name — field ID discovered dynamically
+	if epicName := stringField(fields, epicField); epicName != "" {
 		ticket.EpicName = epicName
 	}
 
 	return ticket
 }
 
-func extractStoryPoints(issue map[string]any) int {
+func extractStoryPoints(issue map[string]any, spFields []string) int {
 	fields, _ := issue["fields"].(map[string]any)
 	if fields == nil {
 		return 0
 	}
 
-	// Try story_points first
-	if sp, ok := fields["story_points"]; ok && sp != nil {
-		if f, ok := sp.(float64); ok && f > 0 {
-			return int(f)
-		}
-	}
-
-	// Fall back to customfield_10016
-	if sp, ok := fields["customfield_10016"]; ok && sp != nil {
-		if f, ok := sp.(float64); ok && f > 0 {
-			return int(f)
+	for _, spField := range spFields {
+		if sp, ok := fields[spField]; ok && sp != nil {
+			if f, ok := sp.(float64); ok && f > 0 {
+				return int(f)
+			}
 		}
 	}
 
@@ -221,6 +225,50 @@ func stringField(m map[string]any, key string) string {
 	return s
 }
 
+// ─── Field Discovery ────────────────────────────────────
+
+// discoverJIRAFields queries the JIRA field definitions to find the actual
+// custom field IDs for story points and epic name, which vary per instance.
+// Returns all candidate story points fields (there can be multiple) and one epic name field.
+func discoverJIRAFields() (storyPointsFields []string, epicNameField string) {
+	epicNameField = "customfield_10014" // fallback
+
+	data, err := jiraRequest("GET", "/rest/api/3/field", nil)
+	if err != nil {
+		log.Printf("[JIRA] Failed to fetch field definitions: %v", err)
+		storyPointsFields = []string{"story_points"}
+		return
+	}
+
+	var fields []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		log.Printf("[JIRA] Failed to parse field definitions: %v", err)
+		storyPointsFields = []string{"story_points"}
+		return
+	}
+
+	for _, f := range fields {
+		nameLower := strings.ToLower(f.Name)
+		if nameLower == "story points" || nameLower == "story point estimate" {
+			storyPointsFields = append(storyPointsFields, f.ID)
+			log.Printf("[JIRA] Discovered story points field: %s (%s)", f.ID, f.Name)
+		}
+		if nameLower == "epic name" {
+			epicNameField = f.ID
+			log.Printf("[JIRA] Discovered epic name field: %s (%s)", f.ID, f.Name)
+		}
+	}
+
+	if len(storyPointsFields) == 0 {
+		storyPointsFields = []string{"story_points"}
+	}
+
+	return
+}
+
 // ─── Activity Fetch ─────────────────────────────────────
 
 func fetchJIRAActivity(accountID, sinceDate string) (JIRAContext, error) {
@@ -231,7 +279,11 @@ func fetchJIRAActivity(accountID, sinceDate string) (JIRAContext, error) {
 		JIRABaseURL: strings.TrimRight(getEnvNonEmpty("JIRA_BASE_URL"), "/"),
 	}
 
-	fields := []string{"summary", "status", "priority", "flagged", "customfield_10014", "story_points", "customfield_10016"}
+	// Discover the right field IDs for this JIRA instance
+	spFields, epicField := discoverJIRAFields()
+
+	fields := []string{"summary", "status", "priority", "flagged", epicField}
+	fields = append(fields, spFields...)
 
 	// Query 1: Assigned in open sprints
 	assignedJQL := fmt.Sprintf(`assignee = "%s" AND sprint in openSprints() ORDER BY status ASC, rank ASC`, accountID)
@@ -242,9 +294,26 @@ func fetchJIRAActivity(accountID, sinceDate string) (JIRAContext, error) {
 
 	var totalCommitted, totalCompleted int
 
-	for _, issue := range assignedIssues {
-		ticket := parseJIRAIssue(issue)
-		points := extractStoryPoints(issue)
+	for i, issue := range assignedIssues {
+		ticket := parseJIRAIssue(issue, epicField)
+		points := extractStoryPoints(issue, spFields)
+
+		// Log field details for the first issue to help debug custom field IDs
+		if i == 0 {
+			if fields, ok := issue["fields"].(map[string]any); ok {
+				var pointFields []string
+				for k, v := range fields {
+					if v == nil {
+						continue
+					}
+					// Look for anything that might be story points
+					if f, ok := v.(float64); ok && f > 0 {
+						pointFields = append(pointFields, fmt.Sprintf("%s=%.0f", k, f))
+					}
+				}
+				log.Printf("[JIRA] First issue %s fields with numeric values: %v", ticket.Key, pointFields)
+			}
+		}
 
 		// Skip Done-status issues from the assigned query
 		if strings.EqualFold(ticket.Status, "Done") {
@@ -269,20 +338,15 @@ func fetchJIRAActivity(accountID, sinceDate string) (JIRAContext, error) {
 	}
 
 	for _, issue := range completedIssues {
-		ticket := parseJIRAIssue(issue)
+		ticket := parseJIRAIssue(issue, epicField)
 		ctx.Completed = append(ctx.Completed, ticket)
 	}
 
 	// Calculate sprint stats if we have any data
 	if len(assignedIssues) > 0 || len(completedIssues) > 0 {
-		carryover := totalCommitted - totalCompleted
-		if carryover < 0 {
-			carryover = 0
-		}
 		ctx.SprintStats = &JIRASprintStats{
 			PointsCommitted: totalCommitted,
 			PointsCompleted: totalCompleted,
-			Carryover:       carryover,
 		}
 	}
 

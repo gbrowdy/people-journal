@@ -11,6 +11,13 @@ import (
 func main() {
 	godotenv.Load()
 
+	if jiraConfigured() {
+		fmt.Printf("JIRA integration: enabled (%s)\n", os.Getenv("JIRA_BASE_URL"))
+	} else {
+		fmt.Printf("JIRA integration: disabled — JIRA_BASE_URL=%q JIRA_EMAIL=%q JIRA_API_TOKEN=(set=%v)\n",
+			os.Getenv("JIRA_BASE_URL"), os.Getenv("JIRA_EMAIL"), os.Getenv("JIRA_API_TOKEN") != "")
+	}
+
 	InitDB()
 	defer DB.Close()
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -50,12 +51,16 @@ func buildPrepPrompt(memberName string, entries []Entry, jira *JIRAContext) stri
 			"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
 				"Below are the last %d meeting entries (newest first). "+
 				"Generate a concise bullet-point briefing with these three sections:\n\n"+
-				"**Follow up on** — open action items and unresolved topics to revisit\n"+
-				"**Watch for** — morale/growth concerns or patterns worth probing\n"+
-				"**Bring up** — topics grounded in their current JIRA activity worth discussing\n\n"+
+				"**Follow up on**\n"+
+				"**Watch for**\n"+
+				"**Bring up**\n\n"+
+				"Follow up on = open action items and unresolved topics to revisit.\n"+
+				"Watch for = morale/growth concerns or patterns worth probing.\n"+
+				"Bring up = topics grounded in their current JIRA activity worth discussing.\n\n"+
 				"When an action item from a previous 1:1 clearly maps to a JIRA ticket, reference the ticket status instead of treating it as a separate open item.\n\n"+
-				"Keep bullets short and scannable. No narrative prose. "+
-				"Respond ONLY with the three sections and their bullets, using markdown formatting.\n\n",
+				"Keep bullets short and scannable. No narrative prose.\n"+
+				"Use this exact format — section headers as **bold text** on their own line, bullets as - dashes:\n\n"+
+				"**Follow up on**\n- bullet one\n- bullet two\n\n**Watch for**\n- bullet one\n\n**Bring up**\n- bullet one\n\n",
 			memberName, len(entries),
 		))
 	} else {
@@ -63,10 +68,13 @@ func buildPrepPrompt(memberName string, entries []Entry, jira *JIRAContext) stri
 			"You are helping an engineering manager prepare for a 1:1 meeting with %s. "+
 				"Below are the last %d meeting entries (newest first). "+
 				"Generate a concise bullet-point briefing with these two sections:\n\n"+
-				"**Follow up on** — open action items and unresolved topics to revisit\n"+
-				"**Watch for** — morale/growth concerns or patterns worth probing\n\n"+
-				"Keep bullets short and scannable. No narrative prose. "+
-				"Respond ONLY with the two sections and their bullets, using markdown formatting.\n\n",
+				"**Follow up on**\n"+
+				"**Watch for**\n\n"+
+				"Follow up on = open action items and unresolved topics to revisit.\n"+
+				"Watch for = morale/growth concerns or patterns worth probing.\n\n"+
+				"Keep bullets short and scannable. No narrative prose.\n"+
+				"Use this exact format — section headers as **bold text** on their own line, bullets as - dashes:\n\n"+
+				"**Follow up on**\n- bullet one\n- bullet two\n\n**Watch for**\n- bullet one\n\n",
 			memberName, len(entries),
 		))
 	}
@@ -162,8 +170,8 @@ func buildPrepPrompt(memberName string, entries []Entry, jira *JIRAContext) stri
 		}
 
 		if jira.SprintStats != nil {
-			sb.WriteString(fmt.Sprintf("Sprint stats: %d/%d points completed, %d points carried over\n",
-				jira.SprintStats.PointsCompleted, jira.SprintStats.PointsCommitted, jira.SprintStats.Carryover))
+			sb.WriteString(fmt.Sprintf("Sprint stats: %d/%d points completed\n",
+				jira.SprintStats.PointsCompleted, jira.SprintStats.PointsCommitted))
 		}
 
 		sb.WriteString("\n")
@@ -213,6 +221,7 @@ func computeStructuredPrep(entries []Entry) ([]PrepActionItem, []PrepActionItem,
 func handlePrep(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MemberID string `json:"member_id"`
+		Force    bool   `json:"force"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -271,12 +280,14 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 	}
 	key := cacheKey(keyParts...)
 
-	// Check cache
-	if cached, ok := cacheGet(key, "prep"); ok {
-		var result PrepResponse
-		if err := json.Unmarshal([]byte(cached), &result); err == nil {
-			writeJSON(w, 200, result)
-			return
+	// Check cache (skip if force refresh)
+	if !body.Force {
+		if cached, ok := cacheGet(key, "prep"); ok {
+			var result PrepResponse
+			if err := json.Unmarshal([]byte(cached), &result); err == nil {
+				writeJSON(w, 200, result)
+				return
+			}
 		}
 	}
 
@@ -287,28 +298,36 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 	var jiraCtx *JIRAContext
 	var accountID string
 	if jiraConfigured() {
+		log.Printf("[JIRA] Fetching activity for %s (member_id=%s)", memberName, body.MemberID)
 		if jiraAccountID.Valid {
 			accountID = jiraAccountID.String
+			log.Printf("[JIRA] Using cached account ID: %s", accountID)
 		} else {
+			log.Printf("[JIRA] No cached account ID, resolving by name...")
 			resolved, err := resolveJIRAUser(memberName)
 			if err != nil {
-				fmt.Println("JIRA: user resolution failed:", err)
+				log.Printf("[JIRA] User resolution failed: %v", err)
 			} else {
 				accountID = resolved
-				// Cache on team member
 				DB.Exec("UPDATE team_members SET jira_account_id = ? WHERE id = ?", resolved, body.MemberID)
+				log.Printf("[JIRA] Cached account ID %s for %s", resolved, memberName)
 			}
 		}
 
 		if accountID != "" {
-			sinceDate := entries[len(entries)-1].Date // oldest of the last 5
+			sinceDate := entries[len(entries)-1].Date
+			log.Printf("[JIRA] Fetching activity for account %s since %s", accountID, sinceDate)
 			ctx, err := fetchJIRAActivity(accountID, sinceDate)
 			if err != nil {
-				fmt.Println("JIRA: activity fetch failed:", err)
+				log.Printf("[JIRA] Activity fetch failed: %v", err)
 			} else {
+				log.Printf("[JIRA] Got %d assigned, %d completed, %d blocked tickets",
+					len(ctx.Assigned), len(ctx.Completed), len(ctx.Blocked))
 				jiraCtx = &ctx
 			}
 		}
+	} else {
+		log.Printf("[JIRA] Not configured, skipping")
 	}
 
 	// Call AI for briefing

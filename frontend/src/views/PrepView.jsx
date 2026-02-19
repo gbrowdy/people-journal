@@ -2,19 +2,85 @@ import { useState, useEffect } from "react";
 import * as api from "../api";
 import TrendChart from "../components/TrendChart";
 
+function BriefingMarkdown({ text }) {
+  const sections = [];
+  let currentSection = null;
+
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Section header: **Follow up on** (possibly with ## prefix)
+    const headerMatch = trimmed.match(/^(?:#{1,4}\s+)?\*\*(.+?)\*\*\s*$/);
+    if (headerMatch) {
+      currentSection = { title: headerMatch[1], items: [] };
+      sections.push(currentSection);
+      continue;
+    }
+
+    // Bullet point
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch && currentSection) {
+      const parts = bulletMatch[1].split(/\*\*(.+?)\*\*/g);
+      currentSection.items.push(parts);
+      continue;
+    }
+
+    // Fallback
+    if (currentSection) {
+      currentSection.items.push([trimmed]);
+    } else {
+      currentSection = { title: null, items: [[trimmed]] };
+      sections.push(currentSection);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {sections.map((section, si) => (
+        <div key={si}>
+          {section.title && (
+            <div style={{
+              fontSize: 12, fontWeight: 700, color: "#3D405B", marginBottom: 8,
+              textTransform: "uppercase", letterSpacing: 1.5,
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              {section.title}
+            </div>
+          )}
+          {section.items.map((parts, ii) => (
+            <div key={ii} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "4px 0", paddingLeft: 4 }}>
+              <span style={{ color: "#bbb", fontSize: 13, flexShrink: 0 }}>&bull;</span>
+              <span style={{ fontSize: 14, color: "#444", lineHeight: 1.6 }}>
+                {parts.map((part, pi) =>
+                  pi % 2 === 1
+                    ? <strong key={pi} style={{ fontWeight: 600 }}>{part}</strong>
+                    : <span key={pi}>{part}</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function PrepView({ member, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const loadPrep = (force = false) => {
     setLoading(true);
     setError(null);
-    api.fetchPrep(member.id)
+    api.fetchPrep(member.id, { force })
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [member.id]);
+  };
+
+  useEffect(() => { loadPrep(); }, [member.id]);
 
   // Build fake entries for TrendChart from score points
   const trendEntries = data ? data.morale_scores.map((m, i) => ({
@@ -45,6 +111,14 @@ export default function PrepView({ member, onBack }) {
             <span style={{ fontSize: 12, color: "#999" }}>{member.role}</span>
           </div>
         </div>
+        {data && !loading && (
+          <button onClick={() => loadPrep(true)} style={{
+            padding: "8px 16px", borderRadius: 8,
+            background: "white", color: "#666",
+            border: "1px solid rgba(0,0,0,0.12)",
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+          }}>Regenerate</button>
+        )}
       </div>
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 24px" }}>
         {loading && (
@@ -72,12 +146,7 @@ export default function PrepView({ member, onBack }) {
               <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: "0 0 12px" }}>
                 AI Briefing
               </h2>
-              <div style={{
-                fontSize: 14, color: "#444", lineHeight: 1.7,
-                whiteSpace: "pre-wrap",
-              }}>
-                {data.briefing}
-              </div>
+              <BriefingMarkdown text={data.briefing} />
             </div>
 
             {/* Trend Chart */}
@@ -148,12 +217,6 @@ export default function PrepView({ member, onBack }) {
                         {data.jira_sprint_stats.points_completed}/{data.jira_sprint_stats.points_committed}
                       </div>
                       <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5 }}>Points</div>
-                    </div>
-                    <div style={{ textAlign: "center", flex: 1 }}>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: data.jira_sprint_stats.carryover > 0 ? "#E07A5F" : member.color, fontFamily: "'Fraunces', serif" }}>
-                        {data.jira_sprint_stats.carryover}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5 }}>Carryover</div>
                     </div>
                   </div>
                 )}
@@ -251,7 +314,7 @@ export default function PrepView({ member, onBack }) {
                 </h2>
                 {data.unresolved_blockers.map((b, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "6px 0" }}>
-                    <span style={{ color: "#E07A5F", fontSize: 13, flexShrink: 0 }}>&bull;</span>
+                    <span style={{ color: "#bbb", fontSize: 13, flexShrink: 0 }}>&bull;</span>
                     <span style={{ fontSize: 14, color: "#444", lineHeight: 1.5 }}>{b}</span>
                   </div>
                 ))}
