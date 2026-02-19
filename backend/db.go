@@ -13,10 +13,11 @@ import (
 var DB *sql.DB
 
 type TeamMember struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Role  string `json:"role"`
-	Color string `json:"color"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Role          string  `json:"role"`
+	Color         string  `json:"color"`
+	JiraAccountID *string `json:"jira_account_id"`
 }
 
 type ActionItem struct {
@@ -63,6 +64,9 @@ func InitDB() {
 			color TEXT NOT NULL
 		)
 	`)
+
+	// Add jira_account_id column if it doesn't exist (ALTER TABLE ADD COLUMN is a no-op if it already exists)
+	DB.Exec(`ALTER TABLE team_members ADD COLUMN jira_account_id TEXT`)
 
 	DB.Exec(`
 		CREATE TABLE IF NOT EXISTS entries (

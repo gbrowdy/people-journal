@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 // ─── Team Handlers ──────────────────────────────────────
 
 func handleGetTeam(w http.ResponseWriter, r *http.Request) {
-	rows, err := DB.Query("SELECT id, name, role, color FROM team_members")
+	rows, err := DB.Query("SELECT id, name, role, color, jira_account_id FROM team_members")
 	if err != nil {
 		http.Error(w, `{"error":"db error"}`, 500)
 		return
@@ -21,7 +22,11 @@ func handleGetTeam(w http.ResponseWriter, r *http.Request) {
 	members := []TeamMember{}
 	for rows.Next() {
 		var m TeamMember
-		rows.Scan(&m.ID, &m.Name, &m.Role, &m.Color)
+		var jiraID sql.NullString
+		rows.Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
+		if jiraID.Valid {
+			m.JiraAccountID = &jiraID.String
+		}
 		members = append(members, m)
 	}
 	writeJSON(w, 200, members)
@@ -56,8 +61,12 @@ func handleCreateTeamMember(w http.ResponseWriter, r *http.Request) {
 		id, name, role, color)
 
 	var m TeamMember
-	DB.QueryRow("SELECT id, name, role, color FROM team_members WHERE id = ?", id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.Color)
+	var jiraID sql.NullString
+	DB.QueryRow("SELECT id, name, role, color, jira_account_id FROM team_members WHERE id = ?", id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
+	if jiraID.Valid {
+		m.JiraAccountID = &jiraID.String
+	}
 
 	writeJSON(w, 201, m)
 }
@@ -83,8 +92,12 @@ func handleUpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var m TeamMember
-	DB.QueryRow("SELECT id, name, role, color FROM team_members WHERE id = ?", id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.Color)
+	var jiraID sql.NullString
+	DB.QueryRow("SELECT id, name, role, color, jira_account_id FROM team_members WHERE id = ?", id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
+	if jiraID.Valid {
+		m.JiraAccountID = &jiraID.String
+	}
 
 	writeJSON(w, 200, m)
 }
