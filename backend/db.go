@@ -18,6 +18,7 @@ type TeamMember struct {
 	Role          string  `json:"role"`
 	Color         string  `json:"color"`
 	JiraAccountID *string `json:"jira_account_id"`
+	PrepNotes     *string `json:"prep_notes"`
 }
 
 type ActionItem struct {
@@ -53,22 +54,31 @@ func InitDB() {
 		log.Fatal("Failed to open database:", err)
 	}
 
-	DB.Exec("PRAGMA journal_mode = WAL")
-	DB.Exec("PRAGMA foreign_keys = ON")
+	if _, err = DB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		log.Fatal("Failed to set WAL mode:", err)
+	}
+	if _, err = DB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		log.Fatal("Failed to enable foreign keys:", err)
+	}
 
-	DB.Exec(`
+	if _, err = DB.Exec(`
 		CREATE TABLE IF NOT EXISTS team_members (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			role TEXT NOT NULL,
 			color TEXT NOT NULL
 		)
-	`)
+	`); err != nil {
+		log.Fatal("Failed to create team_members table:", err)
+	}
 
-	// Add jira_account_id column if it doesn't exist (ALTER TABLE ADD COLUMN is a no-op if it already exists)
+	// Add jira_account_id column if it doesn't exist
 	DB.Exec(`ALTER TABLE team_members ADD COLUMN jira_account_id TEXT`)
 
-	DB.Exec(`
+	// Add prep_notes column if it doesn't exist
+	DB.Exec(`ALTER TABLE team_members ADD COLUMN prep_notes TEXT`)
+
+	if _, err = DB.Exec(`
 		CREATE TABLE IF NOT EXISTS entries (
 			id TEXT PRIMARY KEY,
 			member_id TEXT NOT NULL REFERENCES team_members(id),
@@ -89,9 +99,11 @@ func InitDB() {
 			created_at TEXT,
 			updated_at TEXT
 		)
-	`)
+	`); err != nil {
+		log.Fatal("Failed to create entries table:", err)
+	}
 
-	DB.Exec(`
+	if _, err = DB.Exec(`
 		CREATE TABLE IF NOT EXISTS cache (
 			key TEXT NOT NULL,
 			category TEXT NOT NULL,
@@ -99,11 +111,15 @@ func InitDB() {
 			created_at TEXT NOT NULL,
 			PRIMARY KEY (key, category)
 		)
-	`)
+	`); err != nil {
+		log.Fatal("Failed to create cache table:", err)
+	}
 
 	// Seed default team members if table is empty
 	var count int
-	DB.QueryRow("SELECT COUNT(*) FROM team_members").Scan(&count)
+	if err = DB.QueryRow("SELECT COUNT(*) FROM team_members").Scan(&count); err != nil {
+		log.Fatal("Failed to count team members:", err)
+	}
 	if count == 0 {
 		defaults := [][]string{
 			{"member-1", "Engineer 1", "Engineer", "#E07A5F"},
@@ -112,8 +128,10 @@ func InitDB() {
 			{"member-4", "Engineer 4", "Engineer", "#F2CC8F"},
 		}
 		for _, m := range defaults {
-			DB.Exec("INSERT INTO team_members (id, name, role, color) VALUES (?, ?, ?, ?)",
-				m[0], m[1], m[2], m[3])
+			if _, err = DB.Exec("INSERT INTO team_members (id, name, role, color) VALUES (?, ?, ?, ?)",
+				m[0], m[1], m[2], m[3]); err != nil {
+				log.Printf("Failed to seed team member %s: %v", m[1], err)
+			}
 		}
 	}
 }

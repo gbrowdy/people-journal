@@ -26,6 +26,7 @@ func main() {
 	mux.HandleFunc("GET /api/team", handleGetTeam)
 	mux.HandleFunc("POST /api/team", handleCreateTeamMember)
 	mux.HandleFunc("PUT /api/team/{id}", handleUpdateTeamMember)
+	mux.HandleFunc("PUT /api/team/{id}/prep-notes", handleUpdatePrepNotes)
 	mux.HandleFunc("DELETE /api/team/{id}", handleDeleteTeamMember)
 
 	mux.HandleFunc("GET /api/entries", handleGetEntries)
@@ -61,6 +62,11 @@ func corsMiddleware(next http.Handler) http.Handler {
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
 			return
+		}
+
+		// Limit request body size to 10 MB
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 		}
 
 		next.ServeHTTP(w, r)

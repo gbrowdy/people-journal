@@ -66,10 +66,92 @@ function BriefingMarkdown({ text }) {
   );
 }
 
-export default function PrepView({ member, onBack }) {
+function PrepNotes({ savedNotes, editingNotes, draftNotes, saving, setEditingNotes, setDraftNotes, saveNotes }) {
+  return (
+    <div style={{
+      background: "white", borderRadius: 12, padding: 20,
+      border: "1px solid rgba(0,0,0,0.06)", marginBottom: 20,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: editingNotes || savedNotes ? 12 : 0 }}>
+        <h2 style={{ fontSize: 12, color: "#aaa", textTransform: "uppercase", letterSpacing: 1.5, margin: 0 }}>
+          My Notes
+        </h2>
+        {!editingNotes && (
+          <button
+            onClick={() => { setDraftNotes(savedNotes); setEditingNotes(true); }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: "2px 4px",
+              color: "#aaa", fontSize: 14, lineHeight: 1,
+            }}
+            title="Edit notes"
+          >
+            &#9998;
+          </button>
+        )}
+      </div>
+      {editingNotes ? (
+        <>
+          <textarea
+            value={draftNotes}
+            onChange={e => setDraftNotes(e.target.value)}
+            autoFocus
+            placeholder="Jot down things you want to discuss..."
+            style={{
+              width: "100%", minHeight: 100, padding: 12, borderRadius: 8,
+              border: "1px solid rgba(0,0,0,0.1)", fontFamily: "'DM Sans', sans-serif",
+              fontSize: 14, color: "#333", lineHeight: 1.6, resize: "vertical",
+              background: "#FAFAF8", outline: "none", boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+            <button
+              onClick={() => { setDraftNotes(savedNotes); setEditingNotes(false); }}
+              style={{
+                padding: "6px 14px", borderRadius: 6, fontSize: 13,
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                background: "white", color: "#666", border: "1px solid rgba(0,0,0,0.12)",
+                cursor: "pointer",
+              }}
+            >Cancel</button>
+            <button
+              onClick={saveNotes}
+              disabled={saving}
+              style={{
+                padding: "6px 14px", borderRadius: 6, fontSize: 13,
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+                background: "#3D405B", color: "white", border: "none",
+                cursor: saving ? "default" : "pointer",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >{saving ? "Saving..." : "Save"}</button>
+          </div>
+        </>
+      ) : (
+        savedNotes ? (
+          <div style={{ fontSize: 14, color: "#444", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+            {savedNotes}
+          </div>
+        ) : (
+          <p
+            onClick={() => setEditingNotes(true)}
+            style={{ fontSize: 14, color: "#bbb", margin: 0, cursor: "pointer" }}
+          >
+            Click to add notes for your next meeting...
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+export default function PrepView({ member, onBack, onMemberUpdated }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [savedNotes, setSavedNotes] = useState(member.prep_notes || "");
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [draftNotes, setDraftNotes] = useState(member.prep_notes || "");
+  const [saving, setSaving] = useState(false);
 
   const loadPrep = (force = false) => {
     setLoading(true);
@@ -82,12 +164,26 @@ export default function PrepView({ member, onBack }) {
 
   useEffect(() => { loadPrep(); }, [member.id]);
 
+  const saveNotes = () => {
+    setSaving(true);
+    api.updatePrepNotes(member.id, draftNotes)
+      .then(() => {
+        setSavedNotes(draftNotes);
+        setEditingNotes(false);
+        if (onMemberUpdated) onMemberUpdated();
+      })
+      .catch(e => console.error("Failed to save notes:", e))
+      .finally(() => setSaving(false));
+  };
+
   // Build fake entries for TrendChart from score points
-  const trendEntries = data ? data.morale_scores.map((m, i) => ({
+  const trendEntries = data?.morale_scores ? data.morale_scores.map((m, i) => ({
     date: m.date,
     morale_score: m.score,
     growth_score: data.growth_scores[i]?.score || 3,
   })) : [];
+
+  const hasEntries = trendEntries.length > 0;
 
   return (
     <>
@@ -111,7 +207,7 @@ export default function PrepView({ member, onBack }) {
             <span style={{ fontSize: 12, color: "#999" }}>{member.role}</span>
           </div>
         </div>
-        {data && !loading && (
+        {data && !loading && hasEntries && (
           <button onClick={() => loadPrep(true)} style={{
             padding: "8px 16px", borderRadius: 8,
             background: "white", color: "#666",
@@ -136,7 +232,27 @@ export default function PrepView({ member, onBack }) {
           </div>
         )}
 
-        {data && !loading && (
+        {data && !loading && !hasEntries && (
+          <>
+            <div style={{
+              background: "white", borderRadius: 12, padding: 24,
+              border: "1px solid rgba(0,0,0,0.06)", marginBottom: 20,
+              textAlign: "center",
+            }}>
+              <p style={{ fontSize: 14, color: "#999", margin: 0 }}>
+                No entries yet for {member.name}. The AI briefing will appear here after your first 1:1.
+              </p>
+            </div>
+
+            <PrepNotes
+              savedNotes={savedNotes} editingNotes={editingNotes} draftNotes={draftNotes}
+              saving={saving} setEditingNotes={setEditingNotes} setDraftNotes={setDraftNotes}
+              saveNotes={saveNotes}
+            />
+          </>
+        )}
+
+        {data && !loading && hasEntries && (
           <>
             {/* AI Briefing */}
             <div style={{
@@ -320,6 +436,12 @@ export default function PrepView({ member, onBack }) {
                 ))}
               </div>
             )}
+
+            <PrepNotes
+              savedNotes={savedNotes} editingNotes={editingNotes} draftNotes={draftNotes}
+              saving={saving} setEditingNotes={setEditingNotes} setDraftNotes={setDraftNotes}
+              saveNotes={saveNotes}
+            />
           </>
         )}
       </div>

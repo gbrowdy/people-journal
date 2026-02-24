@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -13,7 +14,7 @@ import (
 // ─── Team Handlers ──────────────────────────────────────
 
 func handleGetTeam(w http.ResponseWriter, r *http.Request) {
-	rows, err := DB.Query("SELECT id, name, role, color, jira_account_id FROM team_members")
+	rows, err := DB.Query("SELECT id, name, role, color, jira_account_id, prep_notes FROM team_members")
 	if err != nil {
 		http.Error(w, `{"error":"db error"}`, 500)
 		return
@@ -23,12 +24,22 @@ func handleGetTeam(w http.ResponseWriter, r *http.Request) {
 	members := []TeamMember{}
 	for rows.Next() {
 		var m TeamMember
-		var jiraID sql.NullString
-		rows.Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
+		var jiraID, prepNotes sql.NullString
+		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID, &prepNotes); err != nil {
+			log.Printf("Failed to scan team member: %v", err)
+			continue
+		}
 		if jiraID.Valid {
 			m.JiraAccountID = &jiraID.String
 		}
+		if prepNotes.Valid {
+			m.PrepNotes = &prepNotes.String
+		}
 		members = append(members, m)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
 	}
 	writeJSON(w, 200, members)
 }
@@ -58,15 +69,26 @@ func handleCreateTeamMember(w http.ResponseWriter, r *http.Request) {
 		color = "#888888"
 	}
 
-	DB.Exec("INSERT INTO team_members (id, name, role, color) VALUES (?, ?, ?, ?)",
-		id, name, role, color)
+	if _, err := DB.Exec("INSERT INTO team_members (id, name, role, color) VALUES (?, ?, ?, ?)",
+		id, name, role, color); err != nil {
+		log.Printf("Failed to create team member: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "failed to create team member"})
+		return
+	}
 
 	var m TeamMember
-	var jiraID sql.NullString
-	DB.QueryRow("SELECT id, name, role, color, jira_account_id FROM team_members WHERE id = ?", id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
+	var jiraID, prepNotes sql.NullString
+	if err := DB.QueryRow("SELECT id, name, role, color, jira_account_id, prep_notes FROM team_members WHERE id = ?", id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID, &prepNotes); err != nil {
+		log.Printf("Failed to read created team member: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "failed to read created team member"})
+		return
+	}
 	if jiraID.Valid {
 		m.JiraAccountID = &jiraID.String
+	}
+	if prepNotes.Valid {
+		m.PrepNotes = &prepNotes.String
 	}
 
 	writeJSON(w, 201, m)
@@ -85,22 +107,26 @@ func handleUpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, _ := DB.Exec(
+	res, err := DB.Exec(
 		"UPDATE team_members SET name = ?, role = ?, color = ?, jira_account_id = ? WHERE id = ?",
 		body.Name, body.Role, body.Color, body.JiraAccountID, id,
 	)
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Member not found"}`, 404)
+	if err != nil {
+		log.Printf("Failed to update team member %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to update team member"})
 		return
 	}
 
-	var m TeamMember
-	var jiraID sql.NullString
-	DB.QueryRow("SELECT id, name, role, color, jira_account_id FROM team_members WHERE id = ?", id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID)
-	if jiraID.Valid {
-		m.JiraAccountID = &jiraID.String
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "member not found"})
+		return
+	}
+
+	m, err := scanTeamMember(DB.QueryRow("SELECT id, name, role, color, jira_account_id, prep_notes FROM team_members WHERE id = ?", id))
+	if err != nil {
+		log.Printf("Failed to read updated team member: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "failed to read updated team member"})
+		return
 	}
 
 	writeJSON(w, 200, m)
@@ -108,13 +134,39 @@ func handleUpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 
 func handleDeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	DB.Exec("DELETE FROM entries WHERE member_id = ?", id)
-	res, _ := DB.Exec("DELETE FROM team_members WHERE id = ?", id)
 
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Member not found"}`, 404)
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "db error"})
 		return
 	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM entries WHERE member_id = ?", id); err != nil {
+		log.Printf("Failed to delete entries for member %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to delete member entries"})
+		return
+	}
+
+	res, err := tx.Exec("DELETE FROM team_members WHERE id = ?", id)
+	if err != nil {
+		log.Printf("Failed to delete team member %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to delete team member"})
+		return
+	}
+
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "member not found"})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Failed to commit delete for member %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -140,6 +192,7 @@ func handleGetEntries(w http.ResponseWriter, r *http.Request) {
 		Next() bool
 		Scan(...any) error
 		Close() error
+		Err() error
 	}
 	var err error
 
@@ -158,9 +211,14 @@ func handleGetEntries(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		e, err := scanEntry(rows)
 		if err != nil {
+			log.Printf("Failed to scan entry: %v", err)
 			continue
 		}
 		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
 	}
 	writeJSON(w, 200, entries)
 }
@@ -209,7 +267,7 @@ func handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	transcript := nullString(body["transcript"])
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	DB.Exec(`
+	if _, err := DB.Exec(`
 		INSERT INTO entries (id, member_id, date, summary, morale_score, growth_score,
 			morale_rationale, growth_rationale,
 			tags, action_items_mine, action_items_theirs, notable_quotes, blockers, wins,
@@ -219,12 +277,17 @@ func handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		moraleRationale, growthRationale,
 		tags, actionMine, actionTheirs, quotes, blockers, wins,
 		privateNote, transcript, now, now,
-	)
+	); err != nil {
+		log.Printf("Failed to create entry: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "failed to create entry"})
+		return
+	}
 
 	row := DB.QueryRow(fmt.Sprintf("SELECT %s FROM entries WHERE id = ?", entryCols), id)
 	e, err := scanEntry(row)
 	if err != nil {
-		http.Error(w, `{"error":"failed to read created entry"}`, 500)
+		log.Printf("Failed to read created entry: %v", err)
+		writeJSON(w, 500, map[string]string{"error": "failed to read created entry"})
 		return
 	}
 	writeJSON(w, 201, e)
@@ -283,18 +346,32 @@ func handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	values = append(values, time.Now().UTC().Format(time.RFC3339))
 
 	values = append(values, id)
-	DB.Exec(fmt.Sprintf("UPDATE entries SET %s WHERE id = ?", strings.Join(setClauses, ", ")), values...)
+	if _, err := DB.Exec(fmt.Sprintf("UPDATE entries SET %s WHERE id = ?", strings.Join(setClauses, ", ")), values...); err != nil {
+		log.Printf("Failed to update entry %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to update entry"})
+		return
+	}
 
 	row = DB.QueryRow(fmt.Sprintf("SELECT %s FROM entries WHERE id = ?", entryCols), id)
-	updated, _ := scanEntry(row)
+	updated, err := scanEntry(row)
+	if err != nil {
+		log.Printf("Failed to read updated entry %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to read updated entry"})
+		return
+	}
 	writeJSON(w, 200, updated)
 }
 
 func handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	res, _ := DB.Exec("DELETE FROM entries WHERE id = ?", id)
+	res, err := DB.Exec("DELETE FROM entries WHERE id = ?", id)
+	if err != nil {
+		log.Printf("Failed to delete entry %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to delete entry"})
+		return
+	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Entry not found"}`, 404)
+		writeJSON(w, 404, map[string]string{"error": "entry not found"})
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
@@ -329,6 +406,51 @@ func nullInt(v any) any {
 		return nil
 	}
 	return int(f)
+}
+
+func scanTeamMember(row interface{ Scan(...any) error }) (TeamMember, error) {
+	var m TeamMember
+	var jiraID, prepNotes sql.NullString
+	err := row.Scan(&m.ID, &m.Name, &m.Role, &m.Color, &jiraID, &prepNotes)
+	if err != nil {
+		return m, err
+	}
+	if jiraID.Valid {
+		m.JiraAccountID = &jiraID.String
+	}
+	if prepNotes.Valid {
+		m.PrepNotes = &prepNotes.String
+	}
+	return m, nil
+}
+
+func handleUpdatePrepNotes(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		PrepNotes string `json:"prep_notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+
+	var val any = body.PrepNotes
+	if body.PrepNotes == "" {
+		val = nil
+	}
+
+	res, err := DB.Exec("UPDATE team_members SET prep_notes = ? WHERE id = ?", val, id)
+	if err != nil {
+		log.Printf("Failed to update prep notes for %s: %v", id, err)
+		writeJSON(w, 500, map[string]string{"error": "failed to update prep notes"})
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "member not found"})
+		return
+	}
+
+	writeJSON(w, 200, map[string]string{"prep_notes": body.PrepNotes})
 }
 
 func jsonStringify(v any) string {

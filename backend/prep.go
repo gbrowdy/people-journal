@@ -309,7 +309,9 @@ func handlePrep(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[JIRA] User resolution failed: %v", err)
 			} else {
 				accountID = resolved
-				DB.Exec("UPDATE team_members SET jira_account_id = ? WHERE id = ?", resolved, body.MemberID)
+				if _, err := DB.Exec("UPDATE team_members SET jira_account_id = ? WHERE id = ?", resolved, body.MemberID); err != nil {
+				log.Printf("[JIRA] Failed to cache account ID: %v", err)
+			}
 				log.Printf("[JIRA] Cached account ID %s for %s", resolved, memberName)
 			}
 		}

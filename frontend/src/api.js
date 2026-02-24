@@ -70,6 +70,13 @@ export function fetchConfig() {
   return request("/api/config");
 }
 
+export function updatePrepNotes(memberId, prepNotes) {
+  return request(`/api/team/${memberId}/prep-notes`, {
+    method: "PUT",
+    body: JSON.stringify({ prep_notes: prepNotes }),
+  });
+}
+
 export function fetchPrep(memberId, { force = false } = {}) {
   return request("/api/prep", {
     method: "POST",
