@@ -362,6 +362,68 @@ pub fn delete_entry(conn: &Connection, id: &str) -> bool {
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id]).unwrap_or(0) > 0
 }
 
+pub fn get_entries_limited(conn: &Connection, member_id: &str, limit: usize) -> Vec<Entry> {
+    let query = format!("SELECT {ENTRY_COLS} FROM entries WHERE member_id = ?1 ORDER BY date DESC LIMIT ?2");
+    let mut stmt = conn.prepare(&query).expect("failed to prepare query");
+    stmt.query_map(params![member_id, limit as i64], row_to_entry)
+        .expect("failed to query entries")
+        .filter_map(|r| r.ok())
+        .collect()
+}
+
+pub fn get_member_name(conn: &Connection, id: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT name FROM team_members WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    ).ok()
+}
+
+// ─── Cache ──────────────────────────────────────────────
+
+const CACHE_TTL_DAYS: i64 = 30;
+
+pub fn cache_key(parts: &[&str]) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    for p in parts {
+        hasher.update(p.as_bytes());
+        hasher.update(&[0u8]);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn cache_get(conn: &Connection, key: &str, category: &str) -> Option<String> {
+    let result: Option<(String, String)> = conn.query_row(
+        "SELECT value, created_at FROM cache WHERE key = ?1 AND category = ?2",
+        params![key, category],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).ok();
+
+    let (value, created_at) = result?;
+    let created = chrono::DateTime::parse_from_rfc3339(&created_at).ok()?;
+    let age = chrono::Utc::now().signed_duration_since(created);
+
+    if age.num_days() > CACHE_TTL_DAYS {
+        conn.execute("DELETE FROM cache WHERE key = ?1 AND category = ?2", params![key, category]).ok();
+        return None;
+    }
+
+    Some(value)
+}
+
+pub fn cache_set(conn: &Connection, key: &str, category: &str, value: &str) {
+    let now = now_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO cache (key, category, value, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![key, category, value, now],
+    ).ok();
+
+    // Lazy cleanup
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(CACHE_TTL_DAYS)).to_rfc3339();
+    conn.execute("DELETE FROM cache WHERE created_at < ?1", params![cutoff]).ok();
+}
+
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
         id: row.get(0)?,

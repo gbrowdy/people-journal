@@ -1,7 +1,8 @@
+mod ai;
 mod db;
 
 use db::{AppDb, Entry, TeamMember};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
 
@@ -87,6 +88,185 @@ fn delete_entry(db: State<AppDb>, id: String) -> bool {
     db::delete_entry(&conn, &id)
 }
 
+// ─── AI commands ────────────────────────────────────────
+
+#[tauri::command]
+async fn extract_transcript(
+    db: State<'_, AppDb>,
+    transcript: String,
+    member_name: String,
+) -> Result<serde_json::Value, String> {
+    // Check cache
+    let cache_key = db::cache_key(&[&member_name, &transcript]);
+    {
+        let conn = db.0.lock().unwrap();
+        if let Some(cached) = db::cache_get(&conn, &cache_key, "extract") {
+            if let Ok(val) = serde_json::from_str(&cached) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let result = ai::extract_transcript(&transcript, &member_name).await?;
+
+    // Cache the result
+    {
+        let conn = db.0.lock().unwrap();
+        if let Ok(json_str) = serde_json::to_string(&result) {
+            db::cache_set(&conn, &cache_key, "extract", &json_str);
+        }
+    }
+
+    Ok(result)
+}
+
+#[derive(Serialize, Deserialize)]
+struct PrepResponse {
+    briefing: String,
+    open_items_mine: Vec<PrepActionItem>,
+    open_items_theirs: Vec<PrepActionItem>,
+    recent_tags: Vec<TagCount>,
+    unresolved_blockers: Vec<String>,
+    morale_scores: Vec<ScorePoint>,
+    growth_scores: Vec<ScorePoint>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PrepActionItem {
+    text: String,
+    date: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TagCount {
+    tag: String,
+    count: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ScorePoint {
+    date: String,
+    score: i64,
+}
+
+fn compute_structured_prep(entries: &[Entry]) -> (Vec<PrepActionItem>, Vec<PrepActionItem>, Vec<TagCount>, Vec<String>, Vec<ScorePoint>, Vec<ScorePoint>) {
+    let mut open_mine = Vec::new();
+    let mut open_theirs = Vec::new();
+    let mut tag_counts: HashMap<String, usize> = HashMap::new();
+    let mut blockers = Vec::new();
+    let mut morale_scores = Vec::new();
+    let mut growth_scores = Vec::new();
+
+    for e in entries {
+        for a in &e.action_items_mine {
+            if !a.completed {
+                open_mine.push(PrepActionItem { text: a.text.clone(), date: e.date.clone() });
+            }
+        }
+        for a in &e.action_items_theirs {
+            if !a.completed {
+                open_theirs.push(PrepActionItem { text: a.text.clone(), date: e.date.clone() });
+            }
+        }
+        for t in &e.tags {
+            *tag_counts.entry(t.clone()).or_default() += 1;
+        }
+        blockers.extend(e.blockers.iter().cloned());
+        if let Some(score) = e.morale_score {
+            morale_scores.push(ScorePoint { date: e.date.clone(), score });
+        }
+        if let Some(score) = e.growth_score {
+            growth_scores.push(ScorePoint { date: e.date.clone(), score });
+        }
+    }
+
+    let mut tags: Vec<TagCount> = tag_counts.into_iter().map(|(tag, count)| TagCount { tag, count }).collect();
+    tags.sort_by(|a, b| b.count.cmp(&a.count));
+
+    (open_mine, open_theirs, tags, blockers, morale_scores, growth_scores)
+}
+
+#[tauri::command]
+async fn fetch_prep(
+    db: State<'_, AppDb>,
+    member_id: String,
+    force: bool,
+) -> Result<PrepResponse, String> {
+    let (member_name, entries) = {
+        let conn = db.0.lock().unwrap();
+        let name = db::get_member_name(&conn, &member_id)
+            .ok_or("member not found")?;
+        let entries = db::get_entries_limited(&conn, &member_id, 5);
+        (name, entries)
+    };
+
+    if entries.is_empty() {
+        return Ok(PrepResponse {
+            briefing: "No entries yet for this team member.".to_string(),
+            open_items_mine: vec![],
+            open_items_theirs: vec![],
+            recent_tags: vec![],
+            unresolved_blockers: vec![],
+            morale_scores: vec![],
+            growth_scores: vec![],
+        });
+    }
+
+    // Build cache key
+    let mut key_parts: Vec<String> = vec![
+        member_id.clone(),
+        chrono::Utc::now().format("%Y-%m-%d").to_string(),
+    ];
+    for e in &entries {
+        key_parts.push(e.id.clone());
+        if let Some(ref u) = e.updated_at {
+            key_parts.push(u.clone());
+        }
+    }
+    let key_refs: Vec<&str> = key_parts.iter().map(|s| s.as_str()).collect();
+    let cache_key = db::cache_key(&key_refs);
+
+    // Check cache
+    if !force {
+        let conn = db.0.lock().unwrap();
+        if let Some(cached) = db::cache_get(&conn, &cache_key, "prep") {
+            if let Ok(val) = serde_json::from_str(&cached) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let (open_mine, open_theirs, tags, blockers, morale_scores, growth_scores) =
+        compute_structured_prep(&entries);
+
+    // Generate AI briefing
+    let prompt = ai::build_prep_prompt(&member_name, &entries);
+    let briefing = match ai::generate_briefing(&prompt).await {
+        Ok(text) => text,
+        Err(_) => "Failed to generate AI briefing. Showing structured data only.".to_string(),
+    };
+
+    let resp = PrepResponse {
+        briefing,
+        open_items_mine: open_mine,
+        open_items_theirs: open_theirs,
+        recent_tags: tags,
+        unresolved_blockers: blockers,
+        morale_scores,
+        growth_scores,
+    };
+
+    // Cache
+    {
+        let conn = db.0.lock().unwrap();
+        if let Ok(json_str) = serde_json::to_string(&resp) {
+            db::cache_set(&conn, &cache_key, "prep", &json_str);
+        }
+    }
+
+    Ok(resp)
+}
+
 // ─── Config ─────────────────────────────────────────────
 
 #[tauri::command]
@@ -100,6 +280,10 @@ fn get_config() -> HashMap<String, serde_json::Value> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env from the backend directory (same keys as the Go server)
+    let _ = dotenvy::from_filename("backend/.env");
+    let _ = dotenvy::from_filename("../backend/.env");
+
     let conn = db::init_db();
 
     tauri::Builder::default()
@@ -115,6 +299,8 @@ pub fn run() {
             create_entry,
             update_entry,
             delete_entry,
+            extract_transcript,
+            fetch_prep,
             get_config,
         ])
         .setup(|app| {
