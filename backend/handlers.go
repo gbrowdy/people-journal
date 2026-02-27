@@ -283,6 +283,11 @@ func handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clear prep notes — they were for this meeting, which just happened
+	if memberID != "" {
+		DB.Exec("UPDATE team_members SET prep_notes = NULL WHERE id = ?", memberID)
+	}
+
 	row := DB.QueryRow(fmt.Sprintf("SELECT %s FROM entries WHERE id = ?", entryCols), id)
 	e, err := scanEntry(row)
 	if err != nil {
