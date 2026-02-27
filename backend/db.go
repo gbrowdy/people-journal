@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -47,9 +50,33 @@ type Entry struct {
 	UpdatedAt         *string      `json:"updated_at"`
 }
 
+func dbPath() string {
+	var dir string
+	switch runtime.GOOS {
+	case "darwin":
+		dir = filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "People Journal")
+	case "windows":
+		dir = filepath.Join(os.Getenv("APPDATA"), "People Journal")
+	default:
+		// Linux / other Unix
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			dir = filepath.Join(xdg, "people-journal")
+		} else {
+			dir = filepath.Join(os.Getenv("HOME"), ".local", "share", "people-journal")
+		}
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatal("Failed to create data directory:", err)
+	}
+	return filepath.Join(dir, "people-journal.db")
+}
+
 func InitDB() {
+	path := dbPath()
+	log.Printf("Database: %s", path)
+
 	var err error
-	DB, err = sql.Open("sqlite", "./people-journal.db")
+	DB, err = sql.Open("sqlite", path)
 	if err != nil {
 		log.Fatal("Failed to open database:", err)
 	}
