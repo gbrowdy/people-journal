@@ -280,9 +280,9 @@ fn get_config() -> HashMap<String, serde_json::Value> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Load .env from the backend directory (same keys as the Go server)
-    let _ = dotenvy::from_filename("backend/.env");
-    let _ = dotenvy::from_filename("../backend/.env");
+    // Load .env from the project root (shared with the Go backend)
+    let _ = dotenvy::from_filename("../.env");
+    let _ = dotenvy::from_filename(".env");
 
     let conn = db::init_db();
 

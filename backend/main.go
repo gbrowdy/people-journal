@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	godotenv.Load("../.env")
 
 	if jiraConfigured() {
 		fmt.Printf("JIRA integration: enabled (%s)\n", os.Getenv("JIRA_BASE_URL"))

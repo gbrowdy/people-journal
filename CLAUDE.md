@@ -8,9 +8,11 @@ A private tool for engineering managers to process 1:1 meeting transcripts into 
 
 ## Architecture
 
-Go + SQLite backend, Vite + React frontend.
+Go + SQLite backend, Vite + React frontend, optional Tauri desktop wrapper.
 
 ```
+.env              API keys — shared by both backends (never commit)
+
 backend/          Go HTTP server (port 3001)
   main.go         Server setup, routing, CORS middleware
   db.go           SQLite schema, seed data, model structs, scan helpers
@@ -19,12 +21,16 @@ backend/          Go HTTP server (port 3001)
   prep.go         Pre-meeting prep briefing generation
   jira.go         JIRA REST API client (optional integration)
   cache.go        Response caching helpers
-  .env            API keys (never commit this)
+
+src-tauri/        Tauri desktop app (Rust + native SQLite)
+  src/lib.rs      Tauri commands (mirrors Go API routes)
+  src/db.rs       SQLite schema, CRUD, caching
+  src/ai.rs       Anthropic/OpenAI API calls
 
 frontend/         Vite + React app (port 5173)
   src/
     App.jsx       View router, state management, API orchestration
-    api.js        Fetch wrappers for all backend endpoints
+    api.js        Fetch wrappers — auto-detects Tauri vs HTTP backend
     constants.js  TAGS array
     components/   PulseBar, PulseSelector, TagPill, EntryCard, EditableList
     views/        Dashboard, PersonView, NewEntry, ReviewEntry, EntryDetail, Settings, PrepView
